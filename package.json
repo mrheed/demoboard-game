@@ -1,11 +1,11 @@
 {
-  "name": "board",
+  "name": "board-game",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --port 3001",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --port 3001",
     "lint": "eslint",
     "test:paid-play": "NODE_ENV=test tsx --test tests/paid-play.test.ts",
     "test:wallet-security": "NODE_ENV=test tsx --test tests/wallet-security.db.test.ts",

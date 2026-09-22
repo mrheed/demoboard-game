@@ -30,17 +30,14 @@ export function SiteHeader({ className }: { className?: string }) {
   const { authenticated, loading } = useAuthMe();
   const { unlocked } = useDemoAccess();
   const navLinks = NAV_LINKS;
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPath, setMenuPath] = useState<string | null>(null);
+  const menuOpen = menuPath === pathname;
   const panelId = useId();
-
-  useEffect(() => {
-    setMenuOpen(false);
-  }, [pathname]);
 
   useEffect(() => {
     if (!menuOpen) return;
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setMenuOpen(false);
+      if (event.key === "Escape") setMenuPath(null);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -127,7 +124,7 @@ export function SiteHeader({ className }: { className?: string }) {
                     aria-haspopup="true"
                     data-nav-menu-toggle
                     onClick={() => {
-                      setMenuOpen((value) => !value);
+                      setMenuPath(menuOpen ? null : pathname);
                     }}
                   >
                     <span className="sr-only">

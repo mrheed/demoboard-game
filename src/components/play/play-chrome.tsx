@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Globe } from "lucide-react";
 
 import { AudioControlsPopover } from "@/components/audio/audio-controls-popover";
@@ -12,6 +11,7 @@ import {
 import { PlayWalletChip } from "@/components/play/play-wallet-chip";
 import { COMMUNITY_LINKS } from "@/lib/community-links";
 import { cn } from "@/lib/utils";
+import { getWebsiteUrl } from "@/lib/website-url";
 
 /**
  * Game-client HUD. Wallet + social top-right, speaker bottom-left.
@@ -43,7 +43,7 @@ function PlaySocialCapsule() {
           <XLogo className="size-3.5" />
         </SocialIcon>
       ) : null}
-      <SocialIcon href="/" label="BOARD home" internal>
+      <SocialIcon href={getWebsiteUrl()} label="BOARD website">
         <Globe className="size-3.5" aria-hidden />
       </SocialIcon>
       {telegram ? (
@@ -64,25 +64,15 @@ function SocialIcon({
   href,
   label,
   children,
-  internal = false,
 }: {
   href: string;
   label: string;
   children: React.ReactNode;
-  internal?: boolean;
 }) {
   const className = cn(
     "grid size-8 place-items-center rounded-full text-cream transition-colors duration-150",
     "hover:bg-gold hover:text-void",
   );
-
-  if (internal) {
-    return (
-      <Link href={href} aria-label={label} className={className}>
-        {children}
-      </Link>
-    );
-  }
 
   return (
     <a
