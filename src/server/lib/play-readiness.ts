@@ -14,8 +14,9 @@ export async function recordPlayWorkerHealth(kind: "gameplay" | "payments", erro
 }
 
 export async function getPlayEntryReadiness() {
-  if (getBoardChainEnv() !== "mainnet")
-    return { entriesAllowed: false, entryBlockReason: "USDG paid entry is available only on Robinhood Chain mainnet." };
+  // Mainnet moves real money, so it stays behind an explicit release flag.
+  // Testnet stakes a worthless stand-in token, so it needs no such gate; the
+  // worker-health check below still applies to both.
   if (getBoardChainEnv() === "mainnet" && process.env.PLAY_MAINNET_ENABLED !== "true")
     return { entriesAllowed: false, entryBlockReason: "Mainnet entries are disabled pending release approval." };
   // Unit tests exercise mainnet money movement exclusively through a fake RPC.

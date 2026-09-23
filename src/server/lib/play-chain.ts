@@ -31,7 +31,7 @@ import {
 } from "@/lib/wallet/chains";
 import {
   parseUsdg,
-  ROBINHOOD_USDG_ADDRESS,
+  getUsdgAddress,
   USDG_ABI,
   USDG_DECIMALS,
   USDG_SYMBOL,
@@ -188,7 +188,7 @@ function receiptHasExactUsdgTransfer(
   value: bigint,
 ) {
   return receipt.logs.some((log) => {
-    if (log.address.toLowerCase() !== ROBINHOOD_USDG_ADDRESS.toLowerCase())
+    if (log.address.toLowerCase() !== getUsdgAddress().toLowerCase())
       return false;
     try {
       const decoded = decodeEventLog({
@@ -296,7 +296,7 @@ export async function verifySitTransaction(input: {
   const to = tx.to?.toLowerCase();
   const from = tx.from.toLowerCase();
   if (
-    to !== ROBINHOOD_USDG_ADDRESS.toLowerCase() ||
+    to !== getUsdgAddress().toLowerCase() ||
     from !== expectedFrom ||
     tx.value !== BigInt(0)
   ) {
@@ -364,7 +364,7 @@ type ExplorerTx = {
 };
 
 async function treasuryExplorerRows(): Promise<ExplorerTx[]> {
-  const url = `${getBoardExplorerUrl()}/api?module=account&action=tokentx&contractaddress=${ROBINHOOD_USDG_ADDRESS}&address=${getTreasury().address}&sort=desc&page=1&offset=80`;
+  const url = `${getBoardExplorerUrl()}/api?module=account&action=tokentx&contractaddress=${getUsdgAddress()}&address=${getTreasury().address}&sort=desc&page=1&offset=80`;
   try {
     const response = await boardRpcFetch(url, {
       signal: AbortSignal.timeout(4_000),
@@ -392,7 +392,7 @@ export async function listSuccessfulSitHashes(from: Hex): Promise<Hex[]> {
         row.value === value &&
         (!row.contractAddress ||
           row.contractAddress.toLowerCase() ===
-            ROBINHOOD_USDG_ADDRESS.toLowerCase()) &&
+            getUsdgAddress().toLowerCase()) &&
         (!row.tokenDecimal || row.tokenDecimal === String(USDG_DECIMALS)) &&
         row.isError !== "1" &&
         row.txreceipt_status !== "0",
@@ -445,7 +445,7 @@ export async function assertPlayTransfer(transfer: SignedPlayTransfer, to?: Hex,
   const decoded = decodeUsdgTransfer(tx.data);
   if (keccak256(transfer.raw) !== transfer.hash || tx.nonce !== transfer.nonce ||
       tx.chainId !== getBoardChainId() || sender.toLowerCase() !== getTreasury().address.toLowerCase() ||
-      tx.to?.toLowerCase() !== ROBINHOOD_USDG_ADDRESS.toLowerCase() ||
+      tx.to?.toLowerCase() !== getUsdgAddress().toLowerCase() ||
       (tx.value ?? BigInt(0)) !== BigInt(0) || !decoded ||
       (to && decoded.to !== to.toLowerCase()) ||
       (amount && decoded.value !== parseUsdg(amount))) {
@@ -454,7 +454,7 @@ export async function assertPlayTransfer(transfer: SignedPlayTransfer, to?: Hex,
 }
 
 function nonceDocumentKey() {
-  return `play-nonce-usdg-${getBoardChainId()}-${ROBINHOOD_USDG_ADDRESS.toLowerCase()}-${getTreasury().address.toLowerCase()}`;
+  return `play-nonce-usdg-${getBoardChainId()}-${getUsdgAddress().toLowerCase()}-${getTreasury().address.toLowerCase()}`;
 }
 
 /** Called while holding the shared treasury lock. Save the signed intent before sending it. */
@@ -495,7 +495,7 @@ export async function preparePlayTransfer(
       const nonce = Math.max(chainNonce, record.nextNonce ?? chainNonce);
       const prepared = await wallet.prepareTransactionRequest({
         account,
-        to: ROBINHOOD_USDG_ADDRESS,
+        to: getUsdgAddress(),
         data,
         value: BigInt(0),
         nonce,
@@ -503,7 +503,7 @@ export async function preparePlayTransfer(
       const [gasBalance, tokenBalance] = await Promise.all([
         client.getBalance({ address: account.address }),
         client.readContract({
-          address: ROBINHOOD_USDG_ADDRESS,
+          address: getUsdgAddress(),
           abi: USDG_ABI,
           functionName: "balanceOf",
           args: [account.address],
@@ -518,7 +518,7 @@ export async function preparePlayTransfer(
         );
       const raw = await account.signTransaction({
         chainId: getBoardChainId(),
-        to: ROBINHOOD_USDG_ADDRESS,
+        to: getUsdgAddress(),
         data,
         value: BigInt(0),
         nonce,
@@ -571,18 +571,18 @@ export async function getPlayTreasuryStatus() {
     const [gasBalance, tokenBalance, decimals, symbol, fees] = await Promise.all([
       client.getBalance({ address: getTreasury().address }),
       client.readContract({
-        address: ROBINHOOD_USDG_ADDRESS,
+        address: getUsdgAddress(),
         abi: USDG_ABI,
         functionName: "balanceOf",
         args: [getTreasury().address],
       }),
       client.readContract({
-        address: ROBINHOOD_USDG_ADDRESS,
+        address: getUsdgAddress(),
         abi: USDG_ABI,
         functionName: "decimals",
       }),
       client.readContract({
-        address: ROBINHOOD_USDG_ADDRESS,
+        address: getUsdgAddress(),
         abi: USDG_ABI,
         functionName: "symbol",
       }),
@@ -595,7 +595,7 @@ export async function getPlayTreasuryStatus() {
     const canonical = decimals === USDG_DECIMALS && symbol === USDG_SYMBOL;
     return {
       address: getTreasury().address,
-      token: ROBINHOOD_USDG_ADDRESS,
+      token: getUsdgAddress(),
       balanceAtomic: tokenBalance.toString(),
       balanceUsdg: formatUnits(tokenBalance, USDG_DECIMALS),
       gasBalanceWei: gasBalance.toString(),
@@ -606,7 +606,7 @@ export async function getPlayTreasuryStatus() {
   } catch {
     return {
       address: getTreasury().address,
-      token: ROBINHOOD_USDG_ADDRESS,
+      token: getUsdgAddress(),
       balanceAtomic: "0",
       balanceUsdg: "0",
       gasBalanceWei: "0",

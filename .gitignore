@@ -36,6 +36,8 @@ yarn-error.log*
 
 # local play treasury + waiting tables
 .data/
+# Per-network ledgers created by PLAY_DATA_DIR.
+.data-*/
 
 # local AI / project-memory tooling
 .ngodingpakeai/

@@ -39,7 +39,7 @@ import {
 import { paidLeaveToken } from "@/server/lib/play-seat-token";
 import { publishPlayTable } from "@/server/realtime/play-hub";
 import {
-  ROBINHOOD_USDG_ADDRESS,
+  getUsdgAddress,
   USDG_DECIMALS,
   USDG_SYMBOL,
 } from "@/lib/wallet/usdg";
@@ -220,7 +220,7 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
           treasury: getPlayTreasuryAddress().toLowerCase(),
           asset: {
             kind: "erc20" as const,
-            address: ROBINHOOD_USDG_ADDRESS.toLowerCase(),
+            address: getUsdgAddress().toLowerCase(),
             symbol: USDG_SYMBOL,
             decimals: USDG_DECIMALS,
             entryAmount: PLAY_ENTRY_FEE_ATOMIC.toString(),
@@ -531,7 +531,7 @@ async function refundVerifiedExtra(address: Hex, txHash: Hex) {
 export function getPlayConfig() {
   return {
     treasury: getPlayTreasuryAddress(),
-    token: ROBINHOOD_USDG_ADDRESS,
+    token: getUsdgAddress(),
     tokenDecimals: USDG_DECIMALS,
     entryFee: PLAY_ENTRY_FEE,
     entryFeeAtomic: PLAY_ENTRY_FEE_ATOMIC.toString(),
