@@ -1,0 +1,10 @@
+# Dependencies are restored with `forge install`; foundry.lock pins the versions.
+lib/
+
+# Build artifacts
+out/
+cache/
+broadcast/
+
+# Local deployment secrets
+.env
