@@ -15,6 +15,18 @@ import {
 } from "@/server/services/play-table.service";
 import { settlePaidMatch } from "@/server/services/play-settlement.service";
 
+export const LEGACY_MUTATIONS_RETIRED = true;
+
+export function legacyMutationRetiredResponse() {
+  return NextResponse.json(
+    {
+      error: "This retired legacy match is read-only. Paid gameplay is available only through current lobby tables.",
+      code: "LEGACY_RETIRED",
+    },
+    { status: 410 },
+  );
+}
+
 /** Existing game URLs, with paid tables bound to their persisted match. */
 export async function paidGameRoute(
   request: Request,
@@ -22,7 +34,10 @@ export async function paidGameRoute(
   game: GameType,
   action?: MatchAction | "settle",
 ) {
-  if (!isPlayLobbySlotId(roomId)) return null;
+  if (!isPlayLobbySlotId(roomId)) {
+    if (!action) return null;
+    return legacyMutationRetiredResponse();
+  }
   try {
     const url = new URL(request.url);
     if (!action)

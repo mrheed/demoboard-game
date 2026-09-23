@@ -8,7 +8,7 @@ export const ROBINHOOD_CHAIN_LABEL = "Robinhood Chain";
 export const ROBINHOOD_TESTNET_FAUCET = "https://faucet.testnet.chain.robinhood.com/";
 
 export function getBoardChainEnv(): BoardChainEnv {
-  const raw = (process.env.NEXT_PUBLIC_CHAIN_ENV ?? "testnet").toLowerCase();
+  const raw = (process.env.NEXT_PUBLIC_CHAIN_ENV ?? "mainnet").toLowerCase();
   return raw === "mainnet" ? "mainnet" : "testnet";
 }
 
@@ -43,7 +43,7 @@ export function getBoardChainLabel() {
     : ROBINHOOD_CHAIN_LABEL;
 }
 
-/** Optional BOARD ERC-20. Play sits with native ETH; this is for token pages. */
+/** Optional BOARD ERC-20. Paid play uses canonical USDG; this is for BOARD pages. */
 export function getBoardTokenAddress(): `0x${string}` | null {
   const raw = process.env.NEXT_PUBLIC_BOARD_TOKEN_ADDRESS?.trim();
   if (!raw || !/^0x[a-fA-F0-9]{40}$/.test(raw)) return null;

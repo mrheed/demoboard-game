@@ -49,6 +49,8 @@ export const PixelArt = memo(function PixelArt({
   className?: string;
 }) {
   return (
+    // Generated data URLs cannot use Next Image's optimization pipeline.
+    // eslint-disable-next-line @next/next/no-img-element
     <img
       src={spriteUrl(sprite)}
       alt={label ?? ""}

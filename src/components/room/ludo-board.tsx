@@ -1,8 +1,8 @@
 import { memo, type CSSProperties } from "react";
 
 import {
-  LUDO_CELLS,
   LUDO_SIZE,
+  ludoCellsForRules,
   ludoSeatColor,
   yardHex,
   yardShade,
@@ -20,12 +20,15 @@ export function LudoBoard({
   className,
   overlay,
   showYardBadges = true,
+  rulesVersion = 2,
 }: {
   className?: string;
   overlay?: React.ReactNode;
   /** Seat glyph badges in each yard. Off for compact marketing demos. */
   showYardBadges?: boolean;
+  rulesVersion?: number;
 }) {
+  const cells = ludoCellsForRules(rulesVersion);
   return (
     <div
       className={cn(
@@ -39,7 +42,7 @@ export function LudoBoard({
       role="img"
       aria-label="Ludo board with four distinct seat yards"
     >
-      {LUDO_CELLS.map((cell) => (
+      {cells.map((cell) => (
         <LudoCellView key={`${cell.row}-${cell.col}`} cell={cell} />
       ))}
 

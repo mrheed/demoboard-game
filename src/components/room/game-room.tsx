@@ -146,6 +146,7 @@ export function GameRoom({
       yourSeat?.status === "alive" &&
       yourSeat.position === match.state.activeSeat,
   );
+  const viewerAlive = yourSeat?.status === "alive";
   const waiting = !pinnedMatchId && table.status !== "playing";
   const strikes =
     match && yourSeat
@@ -169,7 +170,9 @@ export function GameRoom({
         onLeave={
           waiting || match?.winnerSeat != null
             ? undefined
-            : () => setLeaveOpen(true)
+            : viewerAlive
+              ? () => setLeaveOpen(true)
+              : () => router.push("/play")
         }
       />
       {!isGameEnabled(table.game) && (

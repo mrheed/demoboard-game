@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { cookieToInitialState } from "wagmi";
 
 import { AudioUnlock } from "@/components/audio/audio-unlock";
 import { AppBootLoader } from "@/components/layout/app-boot-loader";
 import { SkyActors } from "@/components/layout/sky-actors";
 import { SignInProvider } from "@/components/account/sign-in-provider";
 import { WalletProviders } from "@/components/wallet/wallet-providers";
-import { wagmiConfig } from "@/lib/wallet/wagmi-config";
+import { boardCookieToInitialState } from "@/lib/wallet/wagmi-storage";
 
 import "./globals.css";
 
@@ -24,7 +23,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const headerStore = await headers();
   const cookie = headerStore.get("cookie") ?? undefined;
-  const initialState = cookieToInitialState(wagmiConfig, cookie);
+  const initialState = boardCookieToInitialState(cookie);
 
   return (
     <html lang="en" className="h-full">

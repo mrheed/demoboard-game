@@ -7,6 +7,7 @@ import {
   getBoardChainEnv,
   getBoardRpcUrl,
 } from "@/lib/wallet/chains";
+import { BOARD_WAGMI_STORAGE_KEY } from "@/lib/wallet/wagmi-storage";
 
 const OKX_RDNS = "com.okex.wallet";
 
@@ -259,6 +260,7 @@ export const wagmiConfig = createConfig({
   },
   ssr: true,
   storage: createStorage({
+    key: BOARD_WAGMI_STORAGE_KEY,
     storage: cookieStorage,
   }),
 });

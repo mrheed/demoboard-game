@@ -48,6 +48,7 @@ export function ProfileMenu({ className }: { className?: string }) {
   const [winsLoading, setWinsLoading] = useState(false);
   const [winsLoadedAt, setWinsLoadedAt] = useState(0);
   const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
 
   const address = wallet?.address;
   const label = address ? shortenAddress(address) : "Account";
@@ -102,27 +103,26 @@ export function ProfileMenu({ className }: { className?: string }) {
 
   async function signOut() {
     setSigningOut(true);
+    setSignOutError(null);
     try {
-      await fetch("/api/auth/logout", {
+      const response = await fetch("/api/auth/logout", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-    } catch {
-      // still clear local
+      if (!response.ok) throw new Error("The server could not revoke this session.");
+      clearBoardSession();
+      try { disconnect(); } catch { /* the server session is already revoked */ }
+      await refresh();
+      setOpen(false);
+      router.push("/");
+      router.refresh();
+    } catch (caught) {
+      setSignOutError(caught instanceof Error ? caught.message : "Could not sign out. Retry.");
+    } finally {
+      setSigningOut(false);
     }
-    clearBoardSession();
-    try {
-      disconnect();
-    } catch {
-      // ignore
-    }
-    await refresh();
-    setOpen(false);
-    setSigningOut(false);
-    router.push("/");
-    router.refresh();
   }
 
   return (
@@ -197,7 +197,7 @@ export function ProfileMenu({ className }: { className?: string }) {
             <p className="font-pixel text-xs uppercase tracking-wider text-faint">
               Legacy BOARD history
             </p>
-            <Link href="/play/history" onClick={() => setOpen(false)} className="mt-3 block text-sm text-gold underline">ETH Ludo matches and refunds</Link>
+            <Link href="/play/history" onClick={() => setOpen(false)} className="mt-3 block text-sm text-gold underline">USDG Ludo matches and refunds</Link>
 
             {winsLoading ? (
               <p className="mt-3 font-pixel text-xs uppercase text-muted">
@@ -252,6 +252,9 @@ export function ProfileMenu({ className }: { className?: string }) {
             >
               {signingOut ? "Signing out…" : "Sign out"}
             </PixelButton>
+            {signOutError ? (
+              <p role="alert" className="text-xs text-red-300">{signOutError}</p>
+            ) : null}
           </div>
         </PixelCard>
       ) : null}

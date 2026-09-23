@@ -14,7 +14,8 @@ export function MusicToggle({ className }: { className?: string }) {
   const [muted, setMuted] = useState(false);
 
   useEffect(() => {
-    setMuted(audioManager.isMusicMuted());
+    const timer = window.setTimeout(() => setMuted(audioManager.isMusicMuted()), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   return (

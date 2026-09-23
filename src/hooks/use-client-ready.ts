@@ -9,7 +9,8 @@ import { useEffect, useState } from "react";
 export function useClientReady() {
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    setReady(true);
+    const timer = window.setTimeout(() => setReady(true), 0);
+    return () => window.clearTimeout(timer);
   }, []);
   return ready;
 }

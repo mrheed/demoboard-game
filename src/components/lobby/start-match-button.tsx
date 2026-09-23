@@ -17,7 +17,7 @@ type StartMatchButtonProps = {
   variant?: VariantProps<typeof pixelButton>["variant"];
 };
 
-/** Returns to Play so the next match pays the ETH sit fee. */
+/** Returns to Play so the next match pays the USDG sit fee. */
 export function StartMatchButton({
   game,
   children,

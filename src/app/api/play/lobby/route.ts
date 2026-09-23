@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { PLAY_STAKE_SYMBOL } from "@/lib/game/play-player";
+import { errorResponse } from "@/server/lib/api-response";
 import { listPlayLobby } from "@/server/services/play-table.service";
 
 /** GET /api/play/lobby · live occupancy for Monopoly and Ludo sit tables. */
@@ -15,15 +16,6 @@ export async function GET(request: Request) {
       symbol: PLAY_STAKE_SYMBOL,
     });
   } catch (error) {
-    console.error("[play-lobby]", error);
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Could not load the lobby.",
-        games: [],
-        symbol: PLAY_STAKE_SYMBOL,
-      },
-      { status: 500 },
-    );
+    return errorResponse(error, "GET /api/play/lobby");
   }
 }

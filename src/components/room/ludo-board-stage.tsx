@@ -9,9 +9,11 @@ import { cn } from "@/lib/utils";
 export function LudoBoardStage({
   className,
   overlay,
+  rulesVersion,
 }: {
   className?: string;
   overlay?: React.ReactNode;
+  rulesVersion?: number;
 }) {
   return (
     <PixelFrame
@@ -20,7 +22,7 @@ export function LudoBoardStage({
         className,
       )}
     >
-      <LudoBoard overlay={overlay} />
+      <LudoBoard overlay={overlay} rulesVersion={rulesVersion} />
     </PixelFrame>
   );
 }

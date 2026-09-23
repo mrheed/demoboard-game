@@ -27,7 +27,17 @@ export function NetworkStatusBanner({ className }: { className?: string }) {
 
   const wrongNetwork =
     isConnected && typeof chainId === "number" && chainId !== expectedChainId;
-  const linked = Boolean(data?.network.connected && data.network.walletAddress);
+  const profileAddress = data?.network.walletAddress?.toLowerCase();
+  const connectedAddress = address?.toLowerCase();
+  const linked = Boolean(
+    data?.network.connected &&
+      profileAddress &&
+      connectedAddress &&
+      profileAddress === connectedAddress,
+  );
+  const profileMismatch = Boolean(
+    data?.network.connected && profileAddress && connectedAddress && profileAddress !== connectedAddress,
+  );
   const connected = isConnected && !wrongNetwork;
 
   const tone = !isConnected
@@ -48,8 +58,10 @@ export function NetworkStatusBanner({ className }: { className?: string }) {
     ? `Connect a ${chainLabel} wallet before depositing or withdrawing.`
     : wrongNetwork
       ? `Your wallet is on the wrong network. Switch to ${chainLabel} (chain ID ${expectedChainId}).`
-      : !linked
-        ? "Wallet connected · sign in to link it to your BOARD profile."
+      : profileMismatch
+        ? "This connected wallet is not the wallet linked to your signed-in BOARD profile. Switch accounts or sign in again."
+        : !linked
+          ? "Wallet connected · sign in to link it to your BOARD profile."
         : null;
 
   return (

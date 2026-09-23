@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createLiveMatch, applyMatchAction, tickMatch } from "../src/server/services/play-match-engine";
 import { sharedTrack, trackCellForSeat } from "../src/lib/game/ludo-geometry";
-import { HOME_LANES, SAFE_CELLS } from "../src/lib/game/ludo-board";
+import { HOME_LANES, SAFE_CELLS, ludoCellsForRules } from "../src/lib/game/ludo-board";
 import { previewMove, findCaptures, movablePawns } from "../src/lib/game/ludo-rules";
 import type { DieValue } from "../src/lib/game/dice";
 
@@ -25,6 +25,15 @@ test("new rules use 52 unique squares; legacy 56-square matches retain their rou
     assert.equal(previewMove(match.state, seat, { ...pawn, status: "track", steps: door }, 6)?.next.status, "finished");
     assert.deepEqual(trackCellForSeat(seat, 0, version), trackCellForSeat(seat, 0, 2));
   }
+});
+
+test("rendered cells preserve legacy corners and hide them for current rules", () => {
+  const removed = new Set(["6:6", "6:8", "8:6", "8:8"]);
+  const legacy = ludoCellsForRules(1).filter((cell) => removed.has(`${cell.row}:${cell.col}`));
+  const current = ludoCellsForRules(2).filter((cell) => removed.has(`${cell.row}:${cell.col}`));
+  assert.equal(legacy.length, 4);
+  assert.ok(legacy.every((cell) => cell.kind === "path"));
+  assert.ok(current.every((cell) => cell.kind === "void"));
 });
 
 test("all seats, track positions and dice obey exact progress and private home boundaries", () => {
@@ -82,7 +91,7 @@ test("timeout catch-up works with zero browsers and preserves a single last-surv
   tickMatch(match, 1_000_000);
   assert.notEqual(match.winnerSeat, null);
   assert.equal(match.state.players.filter((p) => p.status !== "eliminated").length, 1);
-  assert.equal(match.settlement?.netPayout, "0.00784");
+  assert.equal(match.settlement?.netPayout, "3.92");
   const ended = structuredClone(match);
   tickMatch(match, 2_000_000);
   assert.deepEqual(match, ended);

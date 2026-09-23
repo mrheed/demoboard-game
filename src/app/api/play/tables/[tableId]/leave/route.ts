@@ -16,7 +16,7 @@ type RouteContext = {
   params: Promise<{ tableId: string }>;
 };
 
-/** POST /api/play/tables/[tableId]/leave · leave a waiting table and refund ETH. */
+/** POST /api/play/tables/[tableId]/leave · leave a waiting table and refund USDG. */
 export async function POST(request: Request, context: RouteContext) {
   const { tableId } = await context.params;
   if (!tableId) {

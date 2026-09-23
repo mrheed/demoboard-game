@@ -1,8 +1,4 @@
-import {
-  publishMonopoly,
-  subscribeMonopoly,
-  type MonopolyStreamPayload,
-} from "@/server/realtime/monopoly-hub";
+import { subscribeMonopoly, type MonopolyStreamPayload } from "@/server/realtime/monopoly-hub";
 import { getMonopolyState } from "@/server/services/monopoly-state.service";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +48,11 @@ export async function GET(request: Request, context: RouteContext) {
     start(controller) {
       const push = (event: string, data: unknown) => {
         if (closed) return;
+        if (controller.desiredSize !== null && controller.desiredSize <= 0) {
+          cleanup();
+          try { controller.close(); } catch { /* already closed */ }
+          return;
+        }
         controller.enqueue(
           encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
         );
@@ -97,13 +98,11 @@ export async function GET(request: Request, context: RouteContext) {
       }, POLL_MS);
 
       heartbeatTimer = setInterval(() => {
-        publishMonopoly({
+        push("heartbeat", {
           type: "heartbeat",
           roomId,
           ts: Date.now(),
         });
-        // Also push heartbeat directly in case publish has no other listeners
-        // interested · the subscriber above already receives hub heartbeats.
       }, HEARTBEAT_MS);
 
       request.signal.addEventListener("abort", () => {

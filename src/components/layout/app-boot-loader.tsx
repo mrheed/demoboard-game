@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
+import Image from "next/image";
 
 import { PIP_LAYOUT, randomDie, type DieValue } from "@/lib/game/dice";
 import { prefersReducedMotion } from "@/lib/motion/gsap-config";
@@ -29,8 +30,8 @@ export function AppBootLoader() {
   useEffect(() => {
     try {
       if (window.sessionStorage.getItem(BOOT_SEEN_KEY) === "1") {
-        setPhase("gone");
-        return;
+        const timer = window.setTimeout(() => setPhase("gone"), 0);
+        return () => window.clearTimeout(timer);
       }
     } catch {
       // private mode still shows the splash
@@ -260,7 +261,7 @@ export function AppBootLoader() {
       />
 
       <div className="relative z-10 flex w-full max-w-[20rem] flex-col items-center px-6">
-        <img
+        <Image
           src="/board-logo.png"
           alt=""
           width={40}
@@ -268,6 +269,7 @@ export function AppBootLoader() {
           data-pixel
           className="mb-5 size-9 bg-transparent sm:size-10"
           draggable={false}
+          priority
         />
 
         <p className="font-pixel text-[clamp(2rem,6vw,2.6rem)] font-bold leading-[1.25] text-parchment">

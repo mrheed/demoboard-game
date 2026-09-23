@@ -229,6 +229,19 @@ export const LUDO_CELLS: LudoCell[] = (() => {
   return cells;
 })();
 
+const V2_REMOVED_TRACK_CELLS = new Set(["6:6", "6:8", "8:6", "8:8"]);
+const LUDO_V2_CELLS = LUDO_CELLS.map((cell) =>
+  cell.kind === "path" && V2_REMOVED_TRACK_CELLS.has(key(cell.row, cell.col))
+    ? { ...cell, kind: "void" as const }
+    : cell,
+);
+
+/** Render geometry must match the persisted match rules version. */
+export function ludoCellsForRules(rulesVersion = 2): readonly LudoCell[] {
+  if (rulesVersion === 1) return LUDO_CELLS;
+  return LUDO_V2_CELLS;
+}
+
 export function yardHex(seat: number) {
   return ludoSeatColor(seat).hex;
 }

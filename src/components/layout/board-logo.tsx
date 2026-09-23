@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 type BoardLogoProps = React.ComponentProps<"span"> & {
@@ -36,8 +37,7 @@ export function BoardLogo({
       )}
       {...props}
     >
-      {/* Native img keeps the PNG alpha channel; no white fill behind the mark. */}
-      <img
+      <Image
         src="/board-logo.png"
         alt=""
         width={36}

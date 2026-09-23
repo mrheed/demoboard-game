@@ -31,8 +31,8 @@ const TICKER_SIZE = {
 } as const;
 
 /**
- * Canonical way to render a BOARD / ETH amount. Digits use Outfit so values
- * like 0.002 stay readable; the ticker keeps the pixel voice.
+ * Canonical way to render a BOARD / USDG amount. Digits use Outfit while the
+ * ticker keeps the pixel voice.
  */
 export function BoardAmount({
   value,

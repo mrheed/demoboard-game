@@ -38,8 +38,9 @@ export function DemoGateForm({
     const stored = readPreviewGame();
     const next = fromQuery ?? stored;
     if (next) {
-      setPicked(next);
       rememberPreviewGame(next);
+      const timer = window.setTimeout(() => setPicked(next), 0);
+      return () => window.clearTimeout(timer);
     }
   }, [game]);
 

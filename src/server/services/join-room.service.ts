@@ -165,7 +165,7 @@ export async function joinRoom(
     }
     if (isRetiredLegacyEntry(room.gameType)) {
       return { ok: false as const, code: "GAME_DISABLED" as const,
-        message: "Legacy BOARD-stake entry is retired. Use the four-human ETH Ludo rooms at /play. Existing records are preserved for recovery." };
+        message: "Legacy BOARD-stake entry is retired. Use the four-human USDG Ludo rooms at /play. Existing records are preserved for recovery." };
     }
     if (options.requireGame && room.gameType !== options.requireGame) {
       return {
@@ -400,7 +400,7 @@ function joinRoomMock(
     return { ok: false, code: "GAME_DISABLED", message: GAME_DISABLED_MESSAGE };
   }
   if (isRetiredLegacyEntry(room.gameType)) return { ok: false, code: "GAME_DISABLED",
-    message: "Legacy BOARD-stake entry is retired. Use the four-human ETH Ludo rooms at /play." };
+    message: "Legacy BOARD-stake entry is retired. Use the four-human USDG Ludo rooms at /play." };
   if (options.requireGame && room.gameType !== options.requireGame) {
     return {
       ok: false,

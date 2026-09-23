@@ -4,6 +4,8 @@ import { MOCK_PLAYER, MOCK_BALANCE } from "@/lib/mock/lobby";
 import { getDb } from "@/server/db";
 import { transactions, users } from "@/server/db/schema";
 import { isDbConfigured as dbConfigured } from "@/server/lib/db-config";
+import { parseBoardAmount } from "@/lib/money";
+import { defineServiceError } from "@/server/lib/service-error";
 
 export type DepositRequest = {
   userId: string;
@@ -20,6 +22,7 @@ export type DepositResult = {
     chain: string;
     walletAddress: string | null;
     txHash: string | null;
+    txEventIndex: number | null;
     note: string | null;
     createdAt: string;
   };
@@ -35,9 +38,12 @@ const mockDeposits = new Map<string, DepositResult["transaction"]>();
 export async function createPendingDeposit(
   input: DepositRequest,
 ): Promise<DepositResult> {
-  const amount = input.amount;
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new DepositError("Amount must be a positive number.", 400);
+  const amount = parseBoardAmount(input.amount);
+  if (amount === null) {
+    throw new DepositError("Amount must be positive with at most two decimal places.", 400);
+  }
+  if (!input.walletAddress || !/^0x[a-fA-F0-9]{40}$/.test(input.walletAddress)) {
+    throw new DepositError("A valid EVM wallet address is required.", 400);
   }
 
   if (!dbConfigured()) {
@@ -54,6 +60,7 @@ export async function createPendingDeposit(
       chain: MOCK_BALANCE.chain,
       walletAddress: input.walletAddress ?? MOCK_BALANCE.address,
       txHash: null,
+      txEventIndex: null,
       note: "Wallet → platform",
       createdAt: new Date().toISOString(),
     };
@@ -79,7 +86,7 @@ export async function createPendingDeposit(
       type: "deposit",
       status: "pending",
       amount: amount.toFixed(2),
-      walletAddress: input.walletAddress ?? null,
+      walletAddress: input.walletAddress.toLowerCase(),
       note: "Wallet → platform",
     })
     .returning();
@@ -93,6 +100,7 @@ export async function createPendingDeposit(
       chain: row.chain,
       walletAddress: row.walletAddress,
       txHash: row.txHash,
+      txEventIndex: row.txEventIndex,
       note: row.note,
       createdAt: row.createdAt.toISOString(),
     },
@@ -109,12 +117,4 @@ export function upsertMockDeposit(tx: DepositResult["transaction"]) {
   mockDeposits.set(tx.id, tx);
 }
 
-export class DepositError extends Error {
-  status: number;
-
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = "DepositError";
-    this.status = status;
-  }
-}
+export const DepositError = defineServiceError("DepositError");

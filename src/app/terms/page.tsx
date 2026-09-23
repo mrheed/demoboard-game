@@ -23,12 +23,12 @@ const SECTIONS: LegalSection[] = [
   {
     heading: "Prize pool and fees",
     covers:
-      "Four native ETH entries, the 2% retained treasury fee (no automatic burn), confirmed payouts, and when a winner becomes entitled to payment. See /rules for implemented mechanics; these draft terms are not legal launch approval.",
+      "Four 1 USDG entries on Robinhood Chain mainnet, the 2% retained treasury fee (no automatic burn), confirmed payouts, and when a winner becomes entitled to payment. See /rules for implemented mechanics; these draft terms are not legal launch approval.",
   },
   {
     heading: "Deposits and withdrawals",
     covers:
-      "Operator custody of native ETH entries, payout and refund delays, failed on-chain sends, legacy account ownership review, and how preserved balances may be recovered.",
+      "Operator custody of USDG entries, payout and refund delays, failed on-chain sends, legacy account ownership review, and how preserved balances may be recovered.",
   },
   {
     heading: "Abandoned and disputed matches",

@@ -1,7 +1,4 @@
-import {
-  publishPlayTable,
-  subscribePlayTable,
-} from "@/server/realtime/play-hub";
+import { subscribePlayTable } from "@/server/realtime/play-hub";
 import { getPlayTable } from "@/server/services/play-table.service";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +37,11 @@ export async function GET(request: Request, context: RouteContext) {
     start(controller) {
       const push = (event: string, data: unknown) => {
         if (closed) return;
+        if (controller.desiredSize !== null && controller.desiredSize <= 0) {
+          cleanup();
+          try { controller.close(); } catch { /* already closed */ }
+          return;
+        }
         controller.enqueue(
           encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
         );
@@ -52,7 +54,7 @@ export async function GET(request: Request, context: RouteContext) {
       });
 
       heartbeatTimer = setInterval(() => {
-        publishPlayTable({
+        push("heartbeat", {
           type: "heartbeat",
           tableId,
           ts: Date.now(),

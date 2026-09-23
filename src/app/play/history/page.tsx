@@ -6,6 +6,7 @@ import { useAccount } from "wagmi";
 import { usePlaySession } from "@/hooks/use-play-session";
 import { getBoardExplorerUrl } from "@/lib/wallet/chains";
 import type { PlaySettlement } from "@/lib/game/live-match";
+import { PLAY_ENTRY_FEE, PLAY_STAKE_SYMBOL } from "@/lib/game/play-player";
 
 type History = {
   matches: { id: string; roomId: string; game: string; winnerSeat: number | null; settlement: PlaySettlement | null }[];
@@ -46,13 +47,13 @@ export default function PaidHistoryPage() {
       {history.matches.length ? <ul className="mt-3 space-y-4">{history.matches.map((match) => <li key={match.id} className="border border-cream/30 p-4">
         <Link className="text-gold underline" href={`/room/${match.roomId}?match=${match.id}`}>{match.roomId} · open saved match</Link>
         <p>{match.winnerSeat === null ? "In progress" : `Winner: seat ${match.winnerSeat}`} · {match.settlement?.status ?? "No payout due yet"}</p>
-        {match.settlement ? <p>Pot {match.settlement.grossPot} ETH · fee {match.settlement.feeAmount} ETH · winner {match.settlement.netPayout} ETH</p> : null}
+        {match.settlement ? <p>Pot {match.settlement.grossPot} {PLAY_STAKE_SYMBOL} · fee {match.settlement.feeAmount} {PLAY_STAKE_SYMBOL} · winner {match.settlement.netPayout} {PLAY_STAKE_SYMBOL}</p> : null}
         {match.settlement?.txHash ? <a className="text-gold underline" href={`${getBoardExplorerUrl()}/tx/${match.settlement.txHash}`} target="_blank" rel="noreferrer">Payout transaction</a> : null}
         {match.settlement?.error ? <p>{match.settlement.error}</p> : null}
       </li>)}</ul> : <p>No paid matches for this wallet.</p>}
       <h2 className="mt-8 text-xl">Entry refunds</h2>
       {history.refunds.length ? <ul className="mt-3 space-y-4">{history.refunds.map((refund) => <li key={refund.id} className="border border-cream/30 p-4">
-        <p>0.002 ETH · {refund.status} · {new Date(refund.createdAt).toISOString()}</p>
+        <p>{PLAY_ENTRY_FEE} {PLAY_STAKE_SYMBOL} · {refund.status} · {new Date(refund.createdAt).toISOString()}</p>
         {refund.txHash ? <a className="text-gold underline" href={`${getBoardExplorerUrl()}/tx/${refund.txHash}`} target="_blank" rel="noreferrer">Refund transaction</a> : null}
         {refund.error ? <p>{refund.error}</p> : null}
       </li>)}</ul> : <p>No refunds for this wallet.</p>}

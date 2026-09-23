@@ -1,8 +1,4 @@
-import {
-  publishLudo,
-  subscribeLudo,
-  type LudoStreamPayload,
-} from "@/server/realtime/ludo-hub";
+import { subscribeLudo, type LudoStreamPayload } from "@/server/realtime/ludo-hub";
 import { getLudoState } from "@/server/services/ludo-state.service";
 import type { LudoRoomState } from "@/lib/mock/ludo";
 
@@ -49,6 +45,11 @@ export async function GET(request: Request, context: RouteContext) {
     start(controller) {
       const push = (event: string, data: unknown) => {
         if (closed) return;
+        if (controller.desiredSize !== null && controller.desiredSize <= 0) {
+          cleanup();
+          try { controller.close(); } catch { /* already closed */ }
+          return;
+        }
         controller.enqueue(
           encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
         );
@@ -97,7 +98,7 @@ export async function GET(request: Request, context: RouteContext) {
       }, POLL_MS);
 
       heartbeatTimer = setInterval(() => {
-        publishLudo({
+        push("heartbeat", {
           type: "heartbeat",
           roomId,
           ts: Date.now(),

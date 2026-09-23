@@ -1,10 +1,11 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { formatEther, parseEther } from "viem";
+import { formatUnits } from "viem";
 import type { DieValue } from "@/lib/game/dice";
 import { rollDice } from "@/lib/game/dice";
 import type { LiveMatch, MatchAction } from "@/lib/game/live-match";
 import { isPlayBot } from "@/lib/game/play-table";
-import { PLAY_ENTRY_FEE_ETH } from "@/lib/game/play-player";
+import { PLAY_ENTRY_FEE_ATOMIC } from "@/lib/game/play-player";
+import { USDG_DECIMALS } from "@/lib/wallet/usdg";
 import { MATCH_TURN_SECONDS } from "@/lib/game/match-clock";
 import { PRIZE_FEE_RATE } from "@/lib/types";
 import { createLudoMatchForSeats, pawnsFinished } from "@/lib/mock/ludo";
@@ -124,15 +125,15 @@ function checkWinner(match: LiveMatch) {
         (players.length === 1 ? players[0].position : undefined));
   if (winner === undefined) return;
   match.winnerSeat = winner;
-  const gross = parseEther(PLAY_ENTRY_FEE_ETH) * BigInt(match.fundedSeats);
+  const gross = PLAY_ENTRY_FEE_ATOMIC * BigInt(match.fundedSeats);
   const fee =
     (gross * BigInt(Math.round(PRIZE_FEE_RATE * 10_000))) / BigInt(10_000);
   const player = match.state.players.find((p) => p.position === winner)!;
   match.settlement = {
     status: isPlayBot(player.id) ? "house" : "pending",
-    grossPot: formatEther(gross),
-    feeAmount: formatEther(fee),
-    netPayout: formatEther(gross - fee),
+    grossPot: formatUnits(gross, USDG_DECIMALS),
+    feeAmount: formatUnits(fee, USDG_DECIMALS),
+    netPayout: formatUnits(gross - fee, USDG_DECIMALS),
     txHash: null,
     confirmedAt: null,
     error: null,

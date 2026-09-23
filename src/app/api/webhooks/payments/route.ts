@@ -4,6 +4,8 @@ import {
   errorResponse,
   InvalidBodyError,
   readJsonBody,
+  readOptionalInteger,
+  readOptionalNumber,
   readOptionalString,
 } from "@/server/lib/api-response";
 import { assertServiceSecret } from "@/server/lib/service-auth";
@@ -55,6 +57,11 @@ export async function POST(request: Request) {
       id,
       status: readLiteral<PaymentWebhookStatus>(body, "status", STATUSES),
       txHash: readOptionalString(body, "txHash"),
+      eventIndex: readOptionalInteger(body, "eventIndex", { min: 0, max: 2_147_483_647 }),
+      amount: readOptionalNumber(body, "amount"),
+      chain: readOptionalString(body, "chain"),
+      walletAddress: readOptionalString(body, "walletAddress"),
+      asset: readOptionalString(body, "asset"),
       treasuryTxHash: readOptionalString(body, "treasuryTxHash"),
       burnTxHash: readOptionalString(body, "burnTxHash"),
       burnProofUri: readOptionalString(body, "burnProofUri"),

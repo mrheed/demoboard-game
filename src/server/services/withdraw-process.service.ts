@@ -36,6 +36,9 @@ export async function processWithdraw(
     if (pending.status !== "pending") {
       throw new WithdrawError("Withdraw is no longer pending.", 409);
     }
+    if (!input.fail && (!input.txHash || !/^0x[a-fA-F0-9]{64}$/.test(input.txHash))) {
+      throw new WithdrawError("A confirmed 32-byte transaction hash is required.", 400);
+    }
 
     const absolute = Math.abs(pending.amount);
     const balance = await getUserBalance("u_me");
@@ -53,7 +56,7 @@ export async function processWithdraw(
       status: input.fail ? "failed" : "confirmed",
       txHash: input.fail
         ? null
-        : (input.txHash ?? `0xwd${Date.now().toString(16)}`),
+        : input.txHash!.toLowerCase(),
       note: input.fail ? "Withdraw rejected by mock processor" : pending.note,
     };
     upsertMockWithdraw(next);
@@ -96,11 +99,15 @@ export async function processWithdraw(
     const available = await lockAvailable(tx, row.userId);
 
     if (input.fail) {
+      const availableAfter = row.fundsReserved
+        ? await applyBalanceDelta(tx, row.userId, absolute)
+        : available;
       const [updated] = await tx
         .update(transactions)
         .set({
           status: "failed",
           note: "Withdraw rejected by processor",
+          fundsReserved: false,
           updatedAt: new Date(),
         })
         .where(eq(transactions.id, row.id))
@@ -108,35 +115,36 @@ export async function processWithdraw(
 
       return {
         transaction: mapRow(updated),
-        availableAfter: available,
+        availableAfter,
         source: "database" as const,
       };
     }
 
-    if (absolute > available) {
+    if (!input.txHash || !/^0x[a-fA-F0-9]{64}$/.test(input.txHash)) {
+      throw new WithdrawError("A confirmed 32-byte transaction hash is required.", 400);
+    }
+
+    if (!row.fundsReserved && absolute > available) {
       throw new WithdrawError(
         `Insufficient available balance. You can withdraw up to ${available} BOARD.`,
         400,
       );
     }
 
-    const txHash =
-      input.txHash ?? `0x${row.id.replace(/-/g, "").slice(0, 40)}`;
-
     const [updated] = await tx
       .update(transactions)
       .set({
         status: "confirmed",
-        txHash,
+        txHash: input.txHash.toLowerCase(),
+        fundsReserved: false,
         updatedAt: new Date(),
       })
       .where(eq(transactions.id, row.id))
       .returning();
 
-    const availableAfter = await applyBalanceDelta(tx, row.userId, -absolute, {
-      chain: row.chain,
-      walletAddress: row.walletAddress,
-    });
+    const availableAfter = row.fundsReserved
+      ? available
+      : await applyBalanceDelta(tx, row.userId, -absolute);
 
     return {
       transaction: mapRow(updated),

@@ -143,7 +143,7 @@ export function WaitingRoom({
               · {readyCount}/{table.maxPlayers} ready
             </p>
             <p className="mt-2 text-center font-pixel text-[10px] uppercase leading-relaxed text-cream/55">
-              Four paying humans required. No bots in paid rooms. Winner receives 0.00784 ETH; the treasury retains a 2% fee.
+              Four paying humans required. No bots in paid rooms. Winner receives 3.92 USDG; the treasury retains a 2% fee.
             </p>
             <p className="mt-2 text-center text-xs text-cream/70">
               Ready within 2 minutes. If four players are not ready within 5 minutes of the first entry, the room closes and full entry refunds are queued.
@@ -248,7 +248,7 @@ export function WaitingRoom({
               ) : null}
             </div>
             <p className="mt-3 text-center font-pixel text-[10px] uppercase leading-relaxed text-cream/50">
-              Leave before the start to queue a full 0.002 ETH refund. It is complete only after confirmation on-chain.
+              Leave before the start to queue a full 1 USDG refund. It is complete only after confirmation on-chain.
             </p>
             <Link href="/play/history" className="mt-3 block text-center text-sm text-gold underline">My matches and refunds</Link>
             {treasury ? (

@@ -8,17 +8,15 @@ import { PixelButton } from "@/components/ui/pixel-button";
 import { PixelCard } from "@/components/ui/pixel-card";
 import { useBoardTokenBalance } from "@/hooks/use-board-token-balance";
 import { useClientReady } from "@/hooks/use-client-ready";
-import { formatPlayEth, PLAY_STAKE_SYMBOL } from "@/lib/game/play-player";
+import { formatPlayAmount, PLAY_STAKE_SYMBOL } from "@/lib/game/play-player";
 import { cn } from "@/lib/utils";
 import {
   getBoardChainLabel,
-  ROBINHOOD_TESTNET_FAUCET,
   shortenAddress,
 } from "@/lib/wallet/chains";
 
 /**
- * Play HUD wallet: address + live ETH balance, pinned top-right.
- * Numbers use Outfit so 0.002 / 0.008 stay readable at HUD size.
+ * Play HUD wallet: address + live USDG balance, pinned top-right.
  */
 export function PlayWalletChip() {
   const root = useRef<HTMLDivElement>(null);
@@ -65,7 +63,7 @@ export function PlayWalletChip() {
       ? wallet.loading
         ? "…"
         : "…"
-      : formatPlayEth(wallet.amount);
+      : formatPlayAmount(wallet.amount);
 
   async function copyAddress() {
     if (!wallet.address) return;
@@ -147,8 +145,13 @@ export function PlayWalletChip() {
             </p>
             {wallet.onNetwork && !wallet.canEnter && wallet.shortfall > 0 ? (
               <p className="mt-1 font-sans text-[12px] leading-snug text-gold-deep">
-                Need {formatPlayEth(wallet.shortfall)} {PLAY_STAKE_SYMBOL} more
+                Need {formatPlayAmount(wallet.shortfall)} {PLAY_STAKE_SYMBOL} more
                 to sit.
+              </p>
+            ) : null}
+            {wallet.onNetwork && wallet.hasEntry && !wallet.hasGas ? (
+              <p className="mt-1 font-sans text-[12px] leading-snug text-gold-deep">
+                Add a small amount of ETH for Robinhood Chain gas.
               </p>
             ) : null}
           </div>
@@ -176,16 +179,6 @@ export function PlayWalletChip() {
               >
                 {switching ? "Switching…" : "Switch network"}
               </PixelButton>
-            ) : null}
-            {wallet.chainEnv === "testnet" ? (
-              <a
-                href={ROBINHOOD_TESTNET_FAUCET}
-                target="_blank"
-                rel="noreferrer"
-                className="block text-center font-pixel text-[10px] font-semibold uppercase tracking-wide text-parchment underline decoration-gold underline-offset-4"
-              >
-                Get testnet ETH
-              </a>
             ) : null}
             <PixelButton
               type="button"

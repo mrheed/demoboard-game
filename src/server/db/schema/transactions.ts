@@ -4,13 +4,17 @@
  * withdraws/entry fees negative. Chain confirmation updates status + tx_hash.
  */
 import {
+  boolean,
   index,
+  integer,
   numeric,
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 import { transactionStatusEnum, transactionTypeEnum } from "./enums";
 import { users } from "./users";
@@ -31,6 +35,10 @@ export const transactions = pgTable(
     walletAddress: text("wallet_address"),
     /** On-chain transaction hash once broadcast / confirmed. */
     txHash: text("tx_hash"),
+    /** Log/event index makes a chain event uniquely creditable. */
+    txEventIndex: integer("tx_event_index"),
+    /** Pending withdrawals reserve the balance before any chain send. */
+    fundsReserved: boolean("funds_reserved").notNull().default(false),
     note: text("note"),
     /** Optional link to a room/match for entry_fee or payout rows. */
     referenceId: uuid("reference_id"),
@@ -45,6 +53,9 @@ export const transactions = pgTable(
     index("transactions_user_created_idx").on(table.userId, table.createdAt),
     index("transactions_status_idx").on(table.status),
     index("transactions_type_idx").on(table.type),
+    uniqueIndex("transactions_deposit_chain_event_uidx")
+      .on(table.chain, table.txHash, table.txEventIndex)
+      .where(sql`${table.type} = 'deposit' and ${table.txHash} is not null and ${table.txEventIndex} is not null`),
   ],
 );
 

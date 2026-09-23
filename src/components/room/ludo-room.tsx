@@ -57,6 +57,7 @@ export function LudoRoom({
       <div className="order-1 flex flex-col gap-4 lg:order-2">
         <LudoBoardStage
           className="max-w-[min(100%,78vh)]"
+          rulesVersion={state.rulesVersion}
           overlay={
             <>
               <LudoPawnLayer

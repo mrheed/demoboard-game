@@ -13,7 +13,8 @@ export function AudioMuteToggle({ className }: { className?: string }) {
   const [muted, setMuted] = useState(false);
 
   useEffect(() => {
-    setMuted(audioManager.isMuted());
+    const timer = window.setTimeout(() => setMuted(audioManager.isMuted()), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   return (

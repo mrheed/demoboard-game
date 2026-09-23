@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 
 import { MATCH_TURN_SECONDS } from "@/lib/game/match-clock";
 
@@ -18,12 +18,11 @@ export function useTurnClock({
   onExpire: () => void;
 }) {
   const [left, setLeft] = useState(MATCH_TURN_SECONDS);
-  const onExpireRef = useRef(onExpire);
-  onExpireRef.current = onExpire;
+  const expire = useEffectEvent(onExpire);
 
   useEffect(() => {
-    setLeft(MATCH_TURN_SECONDS);
-    if (!running) return;
+    const resetTimer = window.setTimeout(() => setLeft(MATCH_TURN_SECONDS), 0);
+    if (!running) return () => window.clearTimeout(resetTimer);
 
     let remaining = MATCH_TURN_SECONDS;
     const id = window.setInterval(() => {
@@ -31,10 +30,13 @@ export function useTurnClock({
       setLeft(Math.max(0, remaining));
       if (remaining > 0) return;
       window.clearInterval(id);
-      onExpireRef.current();
+      expire();
     }, 1000);
 
-    return () => window.clearInterval(id);
+    return () => {
+      window.clearTimeout(resetTimer);
+      window.clearInterval(id);
+    };
   }, [resetKey, running]);
 
   return left;

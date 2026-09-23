@@ -147,3 +147,92 @@ test("empty PostgreSQL cannot silently replace a ledger; explicit import preserv
   await assert.rejects(initializePlayDocuments({ "play-tables": { tables: [], usedTx: [] } }), /Refusing to overwrite/);
   assert.deepEqual(await withPlayDocument("play-tables", () => legacy, async (value) => value), legacy);
 });
+
+test("pending withdrawals reserve funds atomically and failure releases them", { skip: !enabled }, async () => {
+  const { createPendingWithdraw } = await import("../src/server/services/withdraw.service");
+  const { processWithdraw } = await import("../src/server/services/withdraw-process.service");
+  const db = getDb();
+  await db.update(users).set({ balance: "100.00" }).where(eq(users.id, attackerSession.user.id));
+  await db.update(userBalances).set({ available: "100.00" }).where(eq(userBalances.userId, attackerSession.user.id));
+
+  const first = await createPendingWithdraw({ userId: attackerSession.user.id, amount: 80, walletAddress: attacker.address });
+  assert.equal(first.availableAfter, 20);
+  await assert.rejects(
+    createPendingWithdraw({ userId: attackerSession.user.id, amount: 80, walletAddress: attacker.address }),
+    /withdraw up to 20/,
+  );
+  const released = await processWithdraw({ transactionId: first.transaction.id, fail: true });
+  assert.equal(released.availableAfter, 100);
+
+  const reserved = await createPendingWithdraw({ userId: attackerSession.user.id, amount: 80, walletAddress: attacker.address });
+  const confirmed = await processWithdraw({ transactionId: reserved.transaction.id, txHash: `0x${"81".repeat(32)}` });
+  assert.equal(confirmed.availableAfter, 20);
+  assert.equal((await db.select().from(userBalances).where(eq(userBalances.userId, attackerSession.user.id)))[0].available, "20.00");
+});
+
+test("deposit confirmation requires matching proof and credits a chain event only once", { skip: !enabled }, async () => {
+  const { createPendingDeposit } = await import("../src/server/services/deposit.service");
+  const { confirmDeposit } = await import("../src/server/services/deposit-confirm.service");
+  const db = getDb();
+  await db.update(users).set({ balance: "0.00" }).where(eq(users.id, attackerSession.user.id));
+  await db.update(userBalances).set({ available: "0.00", walletAddress: secondary.address.toLowerCase() }).where(eq(userBalances.userId, attackerSession.user.id));
+  const first = await createPendingDeposit({ userId: attackerSession.user.id, amount: 10, walletAddress: attacker.address });
+  const second = await createPendingDeposit({ userId: attackerSession.user.id, amount: 10, walletAddress: attacker.address });
+  const proof = {
+    txHash: `0x${"91".repeat(32)}`,
+    eventIndex: 7,
+    amount: 10,
+    chain: first.transaction.chain,
+    walletAddress: attacker.address,
+    asset: "BOARD",
+  };
+  await assert.rejects(confirmDeposit({ transactionId: first.transaction.id }), /transaction hash is required/);
+  await confirmDeposit({ transactionId: first.transaction.id, ...proof });
+  await assert.rejects(confirmDeposit({
+    transactionId: second.transaction.id,
+    ...proof,
+    txHash: `0x${"91".repeat(32).toUpperCase()}`,
+  }), /already been credited/);
+  const [balance] = await db.select().from(userBalances).where(eq(userBalances.userId, attackerSession.user.id));
+  assert.equal(balance.available, "10.00");
+  assert.equal(balance.walletAddress, secondary.address.toLowerCase(), "historical deposits must not rewrite wallet identity");
+});
+
+test("wallet login challenges share one pruned bounded document", { skip: !enabled }, async () => {
+  await issueWalletLoginChallenge(victim.address);
+  const rows = await fixtureDb`select key from play_documents where key = 'wallet-challenges-v2' or key like 'wallet-login-%' order by key`;
+  assert.deepEqual(rows.map((row) => row.key), ["wallet-challenges-v2"]);
+});
+
+test("paid reward state is monotonic and late fee proofs are merged without splitting hashes", { skip: !enabled }, async () => {
+  const { processPaymentWebhook } = await import("../src/server/services/payment-webhook.service");
+  const [room] = await fixtureDb`insert into rooms (game_type, entry_fee, status) values ('ludo', 10, 'finished') returning id`;
+  const [match] = await fixtureDb`insert into matches (room_id, game_type, winner_user_id, prize_pool, status)
+    values (${room.id}, 'ludo', ${attackerSession.user.id}, 40, 'settled') returning id`;
+  const [payout] = await fixtureDb`insert into reward_payouts
+    (match_id, room_id, winner_user_id, game_type, entry_fee, seats, gross_pot, fee_amount, treasury_amount, burn_amount, net_payout)
+    values (${match.id}, ${room.id}, ${attackerSession.user.id}, 'ludo', 10, 4, 40, 0.8, 0.4, 0.4, 39.2) returning id`;
+  await fixtureDb`insert into transactions (user_id, type, status, amount, reference_id) values (${attackerSession.user.id}, 'payout', 'pending', 39.2, ${match.id})`;
+  await fixtureDb`insert into fee_ledger (reward_payout_id, match_id, kind, amount) values
+    (${payout.id}, ${match.id}, 'treasury', 0.4), (${payout.id}, ${match.id}, 'burn', 0.4)`;
+  const payoutHash = `0x${"a1".repeat(32)}`;
+  await processPaymentWebhook({ kind: "reward_payout", id: payout.id, status: "paid", txHash: payoutHash });
+  await processPaymentWebhook({
+    kind: "reward_payout", id: payout.id, status: "paid", txHash: payoutHash,
+    treasuryTxHash: `0x${"a2".repeat(32)}`,
+    burnTxHash: `0x${"a3".repeat(32)}`,
+    burnProofUri: "https://example.invalid/proof/a3",
+  });
+  const proofs = await fixtureDb`select kind, tx_hash, proof_uri from fee_ledger where reward_payout_id = ${payout.id} order by kind`;
+  assert.equal(proofs.find((row) => row.kind === "treasury")?.tx_hash, `0x${"a2".repeat(32)}`);
+  assert.equal(proofs.find((row) => row.kind === "burn")?.proof_uri, "https://example.invalid/proof/a3");
+  const stale = await processPaymentWebhook({ kind: "reward_payout", id: payout.id, status: "failed" });
+  assert.equal(stale.status, "paid");
+  assert.equal(stale.txHash, payoutHash);
+  await assert.rejects(
+    processPaymentWebhook({ kind: "reward_payout", id: payout.id, status: "paid", txHash: `0x${"a4".repeat(32)}` }),
+    /different transaction hash/,
+  );
+  const [ledger] = await fixtureDb`select tx_hash from transactions where reference_id = ${match.id} and type = 'payout'`;
+  assert.equal(ledger.tx_hash, payoutHash);
+});

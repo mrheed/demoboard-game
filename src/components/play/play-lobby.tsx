@@ -24,7 +24,7 @@ import { PlayArena, PlaySign } from "@/components/play/play-arena";
 import { PixelButton } from "@/components/ui/pixel-button";
 import { ludoPawnSprite, pawnSprite } from "@/lib/game/pawn-sprite";
 import {
-  formatPlayEth,
+  formatPlayAmount,
   PLAY_ENTRY_FEE,
   PLAY_STAKE_SYMBOL,
 } from "@/lib/game/play-player";
@@ -33,10 +33,7 @@ import { PLAY_WORLDS } from "@/lib/mock/play";
 import { prefersReducedMotion } from "@/lib/motion/gsap-config";
 import { rememberPreviewGame, type PreviewGame } from "@/lib/preview-game";
 import { cn } from "@/lib/utils";
-import {
-  getBoardChainLabel,
-  ROBINHOOD_TESTNET_FAUCET,
-} from "@/lib/wallet/chains";
+import { getBoardChainLabel } from "@/lib/wallet/chains";
 import { MAX_PLAYERS_PER_ROOM } from "@/lib/types";
 import type { PlaySit } from "@/hooks/use-play-sit";
 
@@ -102,6 +99,7 @@ export function PlayLobby({
   } = play;
   const [games, setGames] = useState<PlayLobbyGame[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadBlocked, setLoadBlocked] = useState(false);
   const [selected, setSelected] = useState<PreviewGame>(
     enabledPlayGame(initialGame),
   );
@@ -116,6 +114,7 @@ export function PlayLobby({
   }, [selected]);
 
   useEffect(() => {
+    if (loadBlocked) return;
     let cancelled = false;
     let inFlight = false;
 
@@ -146,6 +145,17 @@ export function PlayLobby({
           }
         } else if (!response.ok) {
           throw new Error(`Lobby unavailable (${response.status}).`);
+        }
+        if (response.status === 503) {
+          if (!cancelled) {
+            setGames(null);
+            setLoadError(
+              payload.error ??
+                "Paid lobby setup requires operator attention.",
+            );
+            setLoadBlocked(true);
+          }
+          return;
         }
         if (!response.ok || !payload.games) {
           throw new Error(payload.error ?? "Could not load the lobby.");
@@ -184,7 +194,7 @@ export function PlayLobby({
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [wallet.address]);
+  }, [loadBlocked, wallet.address]);
 
   useEffect(() => {
     const node = root.current;
@@ -287,7 +297,7 @@ export function PlayLobby({
 
         {refundQueued ? (
           <p className="mt-3 max-w-md text-center font-pixel text-[10px] uppercase leading-relaxed text-[#5a1e00]">
-            You left the table. Your 0.002 ETH refund is queued and will retry
+            You left the table. Your 1 USDG refund is queued and will retry
             when the house wallet has gas.
           </p>
         ) : null}
@@ -324,9 +334,27 @@ export function PlayLobby({
         </div>
 
         {loadError ? (
-          <p className="mt-3 text-center font-pixel text-[10px] uppercase text-[#5a1e00]">
-            {loadError} Showing empty tables until this reloads.
-          </p>
+          <div
+            role="alert"
+            className="mt-3 flex max-w-lg flex-col items-center gap-2 text-center font-pixel text-[10px] uppercase leading-relaxed text-[#5a1e00]"
+          >
+            <p>{loadError}</p>
+            <p>
+              {loadBlocked
+                ? "Operator setup is required. Automatic retries are paused."
+                : "Showing empty tables while the lobby retries automatically."}
+            </p>
+            {loadBlocked ? (
+              <PixelButton
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => setLoadBlocked(false)}
+              >
+                Retry lobby
+              </PixelButton>
+            ) : null}
+          </div>
         ) : null}
 
         {wallet.isConnected && !wallet.onNetwork ? (
@@ -398,7 +426,7 @@ export function PlayLobby({
                     </p>
                   </div>
                   <p className="shrink-0 font-sans text-[12px] font-bold tabular-nums tracking-tight text-gold">
-                    Sit {formatPlayEth(PLAY_ENTRY_FEE)} {PLAY_STAKE_SYMBOL}
+                    Sit {formatPlayAmount(PLAY_ENTRY_FEE)} {PLAY_STAKE_SYMBOL}
                   </p>
                 </div>
                 <ul className="divide-y-[3px] divide-void">
@@ -427,18 +455,6 @@ export function PlayLobby({
           </div>
         </div>
 
-        {!wallet.canEnter &&
-        wallet.onNetwork &&
-        wallet.chainEnv === "testnet" ? (
-          <a
-            href={ROBINHOOD_TESTNET_FAUCET}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-4 block text-center font-pixel text-[10px] font-semibold uppercase tracking-wide text-void underline decoration-gold underline-offset-4"
-          >
-            Get testnet ETH
-          </a>
-        ) : null}
       </div>
     </section>
   );
@@ -636,6 +652,17 @@ const LobbyTableRow = memo(function LobbyTableRow({
         Sit
       </PixelButton>
     );
+  } else if (mine?.tableId && !seatedHere) {
+    action = (
+      <PixelButton
+        type="button"
+        size="sm"
+        variant={mine.game === "monopoly" ? "monopoly" : "ludo"}
+        onClick={() => router.push(`/room/${mine.tableId}`)}
+      >
+        Open {mine.tableId}
+      </PixelButton>
+    );
   } else if (inPlay && !seatedHere) {
     action = (
       <span className="font-pixel text-[10px] uppercase text-gold">
@@ -695,9 +722,16 @@ const LobbyTableRow = memo(function LobbyTableRow({
     );
   } else {
     action = (
-      <span className="font-pixel text-[10px] uppercase text-gold">
-        Need {formatPlayEth(entryFee)} {ticker}
-      </span>
+      <PixelButton
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={busy}
+        title={`Check for an existing ${formatPlayAmount(entryFee)} ${ticker} payment`}
+        onClick={onSit}
+      >
+        {sittingThis ? "Checking…" : "Check payment"}
+      </PixelButton>
     );
   }
 
@@ -735,14 +769,14 @@ const LobbyTableRow = memo(function LobbyTableRow({
             {" "}
             ·{" "}
             <span className="font-sans font-bold tabular-nums tracking-tight text-gold normal-case">
-              {formatPlayEth(table.entryFee)} {PLAY_STAKE_SYMBOL}
+              {formatPlayAmount(table.entryFee)} {PLAY_STAKE_SYMBOL}
             </span>
           </span>
         </p>
       </div>
 
       <p className="hidden shrink-0 font-sans text-sm font-bold tabular-nums tracking-tight text-gold sm:block">
-        {formatPlayEth(table.entryFee)} {PLAY_STAKE_SYMBOL}
+        {formatPlayAmount(table.entryFee)} {PLAY_STAKE_SYMBOL}
       </p>
 
       <div className="hidden shrink-0 sm:block">

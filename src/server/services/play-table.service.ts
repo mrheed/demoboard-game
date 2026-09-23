@@ -10,8 +10,10 @@ import {
 } from "@/server/services/play-match-engine";
 import { withPlayDocument } from "@/server/lib/play-store";
 import { ServiceError } from "@/server/lib/service-error";
-import { PLAY_ENTRY_FEE, PLAY_ENTRY_FEE_ETH } from "@/lib/game/play-player";
-import { parseEther } from "viem";
+import {
+  PLAY_ENTRY_FEE,
+  PLAY_ENTRY_FEE_ATOMIC,
+} from "@/lib/game/play-player";
 import {
   isPlayBot,
   isPlayLobbySlotId,
@@ -29,12 +31,18 @@ import { MAX_PLAYERS_PER_ROOM } from "@/lib/types";
 import {
   getPlayTreasuryAddress,
   getPlayChainHead,
+  getPlayRequiredConfirmations,
   listSuccessfulSitHashes,
   refundSit,
   verifySitTransaction,
 } from "@/server/lib/play-chain";
 import { paidLeaveToken } from "@/server/lib/play-seat-token";
 import { publishPlayTable } from "@/server/realtime/play-hub";
+import {
+  ROBINHOOD_USDG_ADDRESS,
+  USDG_DECIMALS,
+  USDG_SYMBOL,
+} from "@/lib/wallet/usdg";
 
 type PlaySeat = {
   address: string;
@@ -73,7 +81,17 @@ type PendingRefund = {
 
 type Store = {
   entryCutoverBlock?: string;
-  network?: { chainId: number; treasury: string };
+  network?: {
+    chainId: number;
+    treasury: string;
+    asset?: {
+      kind: "erc20";
+      address: string;
+      symbol: string;
+      decimals: number;
+      entryAmount: string;
+    };
+  };
   tables: PlayTable[];
   usedTx: string[];
   pendingRefunds?: PendingRefund[];
@@ -168,16 +186,55 @@ function ensureLobbySlots() {
 let activeMatches: Record<string, LiveMatch> = {};
 let queue: Promise<void> = Promise.resolve();
 
+function hasFinancialHistory(document: Store) {
+  return Boolean(
+    (document.usedTx?.length ?? 0) > 0 ||
+      (document.pendingRefunds?.length ?? 0) > 0 ||
+      Object.keys(document.matches ?? {}).length > 0 ||
+      (document.tables ?? []).some((table) => table.seats.length > 0),
+  );
+}
+
+function samePaymentAsset(
+  actual: NonNullable<Store["network"]>["asset"],
+  expected: NonNullable<NonNullable<Store["network"]>["asset"]>,
+) {
+  return Boolean(
+    actual &&
+      actual.kind === expected.kind &&
+      actual.address.toLowerCase() === expected.address.toLowerCase() &&
+      actual.symbol === expected.symbol &&
+      actual.decimals === expected.decimals &&
+      actual.entryAmount === expected.entryAmount,
+  );
+}
+
 function withLock<T>(fn: () => Promise<T>): Promise<T> {
   const execute = () =>
     withPlayDocument<Store, T>(
       "play-tables",
       () => ({ tables: [], usedTx: [] }),
       async (document) => {
-        const network = { chainId: getBoardChainId(), treasury: getPlayTreasuryAddress().toLowerCase() };
+        const network = {
+          chainId: getBoardChainId(),
+          treasury: getPlayTreasuryAddress().toLowerCase(),
+          asset: {
+            kind: "erc20" as const,
+            address: ROBINHOOD_USDG_ADDRESS.toLowerCase(),
+            symbol: USDG_SYMBOL,
+            decimals: USDG_DECIMALS,
+            entryAmount: PLAY_ENTRY_FEE_ATOMIC.toString(),
+          },
+        };
         if (document.network && (document.network.chainId !== network.chainId || document.network.treasury !== network.treasury))
           throw new ServiceError("Paid storage belongs to another network or treasury. Use a separate database; do not relabel existing funds.", 503);
-        if (!document.network && getBoardChainEnv() === "mainnet" && ((document.usedTx?.length ?? 0) > 0 || Object.keys(document.matches ?? {}).length > 0))
+        if (
+          document.network &&
+          !samePaymentAsset(document.network.asset, network.asset) &&
+          hasFinancialHistory(document)
+        )
+          throw new ServiceError("Paid storage belongs to another payment asset. Reconcile it in a separate ledger; do not relabel existing funds as USDG.", 503);
+        if (!document.network && getBoardChainEnv() === "mainnet" && hasFinancialHistory(document))
           throw new ServiceError("Legacy paid storage requires network review before mainnet use.", 503);
         document.network = network;
         // A fresh ledger must not accept old already-refunded chain payments.
@@ -474,8 +531,11 @@ async function refundVerifiedExtra(address: Hex, txHash: Hex) {
 export function getPlayConfig() {
   return {
     treasury: getPlayTreasuryAddress(),
+    token: ROBINHOOD_USDG_ADDRESS,
+    tokenDecimals: USDG_DECIMALS,
     entryFee: PLAY_ENTRY_FEE,
-    entryFeeWei: parseEther(PLAY_ENTRY_FEE_ETH).toString(),
+    entryFeeAtomic: PLAY_ENTRY_FEE_ATOMIC.toString(),
+    confirmations: getPlayRequiredConfirmations(),
   };
 }
 
@@ -571,7 +631,9 @@ export async function sitPlayTable(input: {
       }
       return {
         kind: "blocked",
-        extraTx: null,
+        // A wallet can switch tables while the first request is in flight. If
+        // it already paid again, verify that transfer before queuing a refund.
+        extraTx,
         result: {
           ok: false,
           code: "ALREADY_SEATED",
@@ -595,16 +657,18 @@ export async function sitPlayTable(input: {
   });
 
   if (early.kind !== "pay") {
+    let refund = false;
     if (early.extraTx) {
-      await refundVerifiedExtra(address, early.extraTx);
+      refund = await refundVerifiedExtra(address, early.extraTx);
     }
-    return early.result;
+    return early.result.ok || !refund
+      ? early.result
+      : { ...early.result, refund: true };
   }
 
   const verified = await verifySitTransaction({
     hash: txHash,
     from: address,
-    tableId: wantedId,
   });
   if (!verified.ok) {
     console.error(
@@ -786,7 +850,7 @@ export async function sitPlayTable(input: {
 }
 
 /**
- * Seat a wallet that already paid 0.002 ETH but never got a room.
+ * Seat a wallet that already paid 1 USDG but never got a room.
  * One payment opens the table. Any extra successful payments are refunded.
  */
 export async function claimUnpaidSit(input: {
@@ -800,7 +864,14 @@ export async function claimUnpaidSit(input: {
     const found = findActiveSeat(address);
     if (!found) return null;
     const sameTable = !wantedId || found.table.id === wantedId;
-    if (!sameTable) return null;
+    if (!sameTable) {
+      return {
+        ok: false as const,
+        code: "ALREADY_SEATED" as const,
+        message: `Finish or leave ${found.table.id} first.`,
+        refund: false,
+      };
+    }
     return {
       ok: true as const,
       table: asView(found.table),
@@ -827,19 +898,36 @@ export async function claimUnpaidSit(input: {
       refund: false,
     };
   }
-  const [primary, ...extras] = open;
-  const result = await sitPlayTable({
-    game: input.game,
-    tableId: input.tableId,
-    address,
-    txHash: primary!,
-  });
-  if (result.ok) {
-    for (const extra of extras) {
-      await refundVerifiedExtra(address, extra);
+  let lastMismatch: SitResult | null = null;
+  for (let index = 0; index < open.length; index += 1) {
+    const candidate = open[index]!;
+    const result = await sitPlayTable({
+      game: input.game,
+      tableId: input.tableId,
+      address,
+      txHash: candidate,
+    });
+    if (result.ok) {
+      const extras = [...open.slice(0, index), ...open.slice(index + 1)];
+      for (const extra of extras) {
+        await refundVerifiedExtra(address, extra);
+      }
+      return result;
     }
+    // Explorer history can contain malformed payments or payments before the
+    // current ledger cutover. Continue until a usable payment is found.
+    if (result.code === "TX_MISMATCH" || result.code === "BAD_TX") {
+      lastMismatch = result;
+      continue;
+    }
+    return result;
   }
-  return result;
+  return lastMismatch ?? {
+    ok: false,
+    code: "NO_PAYMENT",
+    message: "No confirmed sit payment found for this table.",
+    refund: false,
+  };
 }
 
 export type TableActionResult =
@@ -1007,6 +1095,13 @@ export async function forfeitPlayTable(input: {
         ok: false as const,
         code: "NOT_FOUND" as const,
         message: "Table not found.",
+      };
+    }
+    if (table.status !== "playing") {
+      return {
+        ok: false as const,
+        code: "NOT_PLAYING" as const,
+        message: "This table has not started. Leave the waiting table to recover the entry fee.",
       };
     }
     const token = input.leaveToken?.trim() ?? "";

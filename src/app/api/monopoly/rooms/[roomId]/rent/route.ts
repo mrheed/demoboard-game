@@ -8,6 +8,7 @@ import {
 } from "@/server/lib/api-response";
 import { requireUser } from "@/server/lib/require-user";
 import { settleMonopolyRent } from "@/server/services/monopoly-rent.service";
+import { LEGACY_MUTATIONS_RETIRED, legacyMutationRetiredResponse } from "@/server/lib/paid-game-route";
 
 type RouteContext = {
   params: Promise<{ roomId: string }>;
@@ -25,6 +26,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (!roomId) {
     return NextResponse.json({ error: "Missing room id." }, { status: 400 });
   }
+  if (LEGACY_MUTATIONS_RETIRED) return legacyMutationRetiredResponse();
 
   try {
     const { userId } = await requireUser(request);

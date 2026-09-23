@@ -1,4 +1,4 @@
-# Ludo launch verification — 22 September 2026
+# Ludo launch verification — 23 September 2026
 
 ## Outcome: blocked for mainnet
 
@@ -14,7 +14,7 @@ The security fix-finding workflow included a separate boundary investigation and
 - **Payment authority:** four funded human seats are required; no house bots enter paid Ludo. Winner amounts come from the authoritative match, not client calculations. Signed treasury intents and nonces are saved before broadcast, reused on retry, and validated against their immutable payment details. A successful receipt is required for a confirmed payout/refund.
 - **Recovery:** ready/resume cannot create a seat from a supplied receipt or token. Authenticated recovery returns an existing seat only. Imported playing tables lacking server state queue one full refund per funded human instead of forfeiting their money. A missing PostgreSQL ledger fails closed; explicit import preserves consumed hashes and enforces a chain-block cutover against old payment replay. Ambiguous historical refunds are held for review.
 
-These shared service/storage boundaries cover the existing callers without trusting another browser-side representation. Legitimate funded seats, verified multi-wallet accounts, authoritative saved matches, and confirmed payment records remain recoverable. Old BOARD-ledger entry is retired; historical BOARD match recovery needs an operator-reviewed plan rather than silently treating it as native ETH.
+These shared service/storage boundaries cover the existing callers without trusting another browser-side representation. Legitimate funded seats, verified multi-wallet accounts, authoritative saved matches, and confirmed payment records remain recoverable. Old BOARD-ledger entry is retired; historical BOARD match recovery needs an operator-reviewed plan rather than silently treating it as USDG.
 
 ## Gameplay and user experience
 
@@ -22,39 +22,40 @@ Monopoly is disabled for new games and marked “Work in progress.” Existing p
 
 New games use 52 shared squares, four pawns, six-to-enter, exact home entry, safe squares, opponent blockades, capture/finish bonuses, and a third-six penalty. Old authoritative snapshots retain their prior geometry. Each roll/move decision has a 15-second server deadline; three cumulative misses eliminate a player. Missing a move discards its roll, rather than silently moving a pawn for the player. Twenty seeded complete games supplement targeted rule tests.
 
-Unready entries expire after two minutes; incomplete waiting rooms expire after five minutes from first entry. Full refunds are persisted and visible in `/play/history`. Result screens distinguish pending, submitted, failed, and confirmed payment states. Public rules, FAQ, how-to, homepage economics, and token-contract copy now describe the actual native ETH flow. History text contrast was corrected during browser verification.
+Unready entries expire after two minutes; incomplete waiting rooms expire after five minutes from first entry. Full refunds are persisted and visible in `/play/history`. Result screens distinguish pending, submitted, failed, and confirmed payment states. Public rules, FAQ, how-to, homepage economics, and token-contract copy describe the canonical USDG mainnet flow. History text contrast was corrected during browser verification.
 
 ## Actual money flow
 
 | Stage | Destination / amount |
 | --- | --- |
-| Entry | Each player sends 0.002 native ETH to the operator treasury, plus their own network gas |
-| Four funded players | Total pot: 0.008 ETH |
-| Winner | 0.00784 ETH (98%) sent from that treasury |
-| Fee | 0.00016 ETH (2%) remains in that treasury |
-| Pre-start exit / expiry | Full 0.002 ETH refund; operator pays refund gas separately |
+| Entry | Each player transfers exactly 1 USDG to the operator treasury and pays ETH network gas |
+| Four funded players | Total pot: 4 USDG |
+| Winner | 3.92 USDG (98%) sent from that treasury |
+| Fee | 0.08 USDG (2%) remains in that treasury |
+| Pre-start exit / expiry | Full 1 USDG refund; operator pays ETH refund gas separately |
 
-There is no game escrow smart contract in this repository's paid flow, and no automatic fee-split transfer, buyback, or burn. The BOARD ERC-20 contract is not the native ETH game-payment contract. Server dice are cryptographically random but not independently verifiable on-chain randomness. Treasury solvency, key custody, chain finality, and operator reliability are real trust assumptions.
+There is no game escrow smart contract in this repository's paid flow, and no automatic fee-split transfer, buyback, or burn. The BOARD ERC-20 contract is not the canonical USDG payment contract. Server dice are cryptographically random but not independently verifiable on-chain randomness. Treasury solvency, key custody, chain finality, and operator reliability are real trust assumptions.
 
 ## Ordered verification gates
 
 1. **Syntax, types, imports, build**
    - `npx tsc --noEmit`: passed.
-   - Focused `npx eslint` over changed server, gameplay, UI, scripts, and tests: passed; the final homepage/history edits also passed focused lint.
+   - Repository-wide `npm run lint`: passed.
    - `git diff --check`: passed.
-   - `npm run build`: passed in an isolated copy, including TypeScript and 51 static pages. No real environment files were copied. A test-copy-only `turbopack.root` setting allowed the linked dependency directory; real project configuration was not changed.
+   - `npm run build`: passed, including TypeScript and 51 static pages.
 2. **Security triggers and alternate inputs**
-   - `BOARD_TEST_PG_PORT=55439 npm run test:paid-play`: 22 passed.
-   - `BOARD_TEST_PG_PORT=55439 npm run test:wallet-security`: 7 passed.
-   - `npm run test:paid-play` using isolated file storage: 22 passed.
-   - Reproductions reject forged-wallet/anonymous actions, unverified wallet takeover, expired/replayed proofs, wrong-network aliases, stale actions, receipt/token adoption, and pre-cutover historical payments. Reverted transfers do not become confirmed. Concurrent retry uses one signed transfer, not a second payout.
+   - `BOARD_TEST_PG_PORT=55439 npm run test:paid-play`: 27 passed.
+   - `BOARD_TEST_PG_PORT=55439 npm run test:wallet-security`: 11 passed.
+   - `npm run test:paid-play` using isolated file storage: 27 passed.
+   - Reproductions reject forged-wallet/anonymous actions, unverified wallet takeover, expired/replayed proofs, wrong-network aliases, stale actions, receipt/token adoption, wrong USDG amount, same-symbol impostor contracts, missing transfer events, insufficient confirmation depth, and pre-cutover historical payments. Reverted transfers do not become confirmed. Concurrent retry uses one signed transfer, not a second payout.
 3. **Legitimate controls and surrounding checks**
-   - `npm run test:ludo-rules`: 7 passed, including twenty complete seeded games.
+   - `npm run test:ludo-rules`: 8 passed, including twenty complete seeded games.
+   - `npm run test:auth-mock`: 1 passed.
    - `NODE_ENV=test npx tsx src/lib/game/game-rules.check.ts`: passed.
    - Controls cover legitimate secondary-wallet linking/login, unchanged primary selection, independent readers seeing one board, exact payouts, waiting-room refunds, saved match recovery, and preserved migration balances. Concurrent document locks and treasury nonce reservations were exercised against disposable PostgreSQL.
    - Isolated `npm run play:worker`: starts and records gameplay/payment health. With deliberately unavailable loopback RPC it records a payment error; `/api/play/config` returns `entriesAllowed:false` and `canRefund:false`. The fixture worker was then stopped.
-   - Browser: homepage/WIP, home-to-Ludo navigation, connect dialog, public rules/mobile layout, and unauthenticated history render. No framework overlay or page exception was detected in those checks. Anonymous history API correctly returns HTTP 401. This does not verify a connected-wallet lobby or completed live match.
-   - **Repository-wide `npm run lint` fails:** 11 existing errors and 4 warnings in unchanged audio/demo/layout/lobby/client-ready/turn-clock and related files. Those unrelated changes were not folded into this financial-security patch. A WalletConnect duplicate-initialization warning also remains in production-preview server logs; real connector/reconnect behavior needs verification.
+   - Browser: the mainnet `/play` wallet gate and public `/rules` page render without a framework overlay or page exception. The rules page displays Robinhood Chain mainnet, 1 USDG entry, and the 3.92 USDG winner amount. Browser console output contained only development/HMR notices. This does not verify a connected-wallet lobby or completed live match.
+   - Live local `/api/play/config`: chain ID 4663, canonical USDG `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`, 1,000,000 atomic entry amount, and 30 required confirmations. It correctly returns `entriesAllowed:false` while the explicit mainnet release gate is disabled.
 
 All chain-payment regression suites use fake RPC responses and disposable keys; no real funds were sent. The original focused reproductions no longer succeed, while the controls above pass. This is evidence for these fixes, not proof that every possible gameplay or payment defect is absent.
 
@@ -70,9 +71,9 @@ All chain-payment regression suites use fake RPC responses and disposable keys; 
 Keep `PLAY_MAINNET_ENABLED` unset. Before enabling it:
 
 1. Back up, reconcile, and explicitly migrate the intended financial ledger; review legacy account ownership and historical BOARD matches. The full importer CLI with real historical files/RPC was not end-to-end executed here.
-2. Run four independent real testnet wallets through paid entry, reconnect, concurrent turns, normal finish, forfeit, waiting expiry/refund, and successful payout receipts. Validate the intended wallet connector and mobile environment.
+2. Run four independent wallets through a controlled low-value mainnet staging window: paid entry, reconnect, concurrent turns, normal finish, forfeit, waiting expiry/refund, and successful payout receipts. Validate the intended wallet connector and mobile environment.
 3. Test worker/server restarts, RPC outages, dropped/replaced transactions, and treasury gas exhaustion in the intended deployment. Reconcile all treasury liabilities and reserves. Automatic fee replacement is not implemented; failed or consumed nonces require operator recovery without deleting the journal.
 4. Choose and validate the required confirmation/finality and reorganization policy. One successful receipt is not proof against a later reorg.
-5. Resolve the repository check failures, commission an independent security assessment, and approve the currently draft operating/legal terms.
+5. Commission an independent security assessment and approve the currently draft operating/legal terms.
 
-Local preview: `http://127.0.0.1:3007`, served from an isolated copy using disposable PostgreSQL and a deliberately unavailable loopback RPC. It is a UI preview, not a funded testnet deployment. The real environment and runtime financial files were not read or changed.
+Local preview runs without funded mainnet transactions. The real environment and runtime financial files were not read or changed.

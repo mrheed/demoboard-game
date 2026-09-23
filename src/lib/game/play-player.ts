@@ -1,21 +1,23 @@
 import { shortenAddress } from "@/lib/wallet/chains";
+import { parseUsdg, USDG_SYMBOL } from "@/lib/wallet/usdg";
 
-/** Native ETH sit fee on Robinhood Chain Testnet. */
-export const PLAY_ENTRY_FEE = 0.002;
+/** Exact USDG amount required for one paid seat. */
+export const PLAY_ENTRY_FEE = 1;
 
-export const PLAY_ENTRY_FEE_ETH = "0.002";
+export const PLAY_ENTRY_FEE_USDG = "1";
 
-export const PLAY_STAKE_SYMBOL = "ETH";
+export const PLAY_ENTRY_FEE_ATOMIC = parseUsdg(PLAY_ENTRY_FEE_USDG);
+
+export const PLAY_STAKE_SYMBOL = USDG_SYMBOL;
 
 /**
- * Sit-fee ETH amounts. Always keeps enough fraction digits that 0.002 and
- * 0.008 stay distinct. Pixel titles are not used for this string.
+ * USDG amounts use at most the token's six decimal places. Pixel titles are
+ * not used for this string.
  */
-export function formatPlayEth(amount: number) {
-  const digits = Math.abs(amount) >= 1 ? 2 : 3;
+export function formatPlayAmount(amount: number) {
   return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: 4,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6,
   }).format(amount);
 }
 

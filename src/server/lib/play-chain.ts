@@ -3,10 +3,11 @@ import { dirname } from "node:path";
 import {
   createPublicClient,
   createWalletClient,
-  formatEther,
-  hexToString,
+  decodeEventLog,
+  decodeFunctionData,
+  encodeFunctionData,
+  formatUnits,
   http,
-  parseEther,
   keccak256,
   parseTransaction,
   recoverTransactionAddress,
@@ -15,7 +16,10 @@ import {
 } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
-import { PLAY_ENTRY_FEE_ETH } from "@/lib/game/play-player";
+import {
+  PLAY_ENTRY_FEE_ATOMIC,
+  PLAY_ENTRY_FEE_USDG,
+} from "@/lib/game/play-player";
 import { boardRpcFetch } from "@/server/lib/board-rpc-fetch";
 import { playDataPath } from "@/server/lib/play-data-path";
 import { withPlayDocument } from "@/server/lib/play-store";
@@ -25,10 +29,23 @@ import {
   getBoardExplorerUrl,
   getBoardRpcUrl,
 } from "@/lib/wallet/chains";
+import {
+  parseUsdg,
+  ROBINHOOD_USDG_ADDRESS,
+  USDG_ABI,
+  USDG_DECIMALS,
+  USDG_SYMBOL,
+} from "@/lib/wallet/usdg";
 
 const TREASURY_PATH = playDataPath("play-treasury.json");
 
-export const PLAY_SIT_VALUE = parseEther(PLAY_ENTRY_FEE_ETH);
+export const PLAY_SIT_VALUE = PLAY_ENTRY_FEE_ATOMIC;
+
+/** Mainnet confirmation depth. Override only through a reviewed deployment setting. */
+export function getPlayRequiredConfirmations() {
+  const raw = Number(process.env.PLAY_PAYMENT_CONFIRMATIONS ?? "30");
+  return Number.isSafeInteger(raw) && raw >= 1 && raw <= 1_000 ? raw : 30;
+}
 
 type TreasuryFile = {
   address: Hex;
@@ -148,33 +165,56 @@ export type SitTxError = {
 };
 
 /**
- * Confirm a sit payment: successful native transfer of the entry fee from the
- * player to the play treasury on the active Robinhood chain.
+ * Confirm a sit payment: a successful canonical USDG transfer of exactly one
+ * token from the player to the play treasury on Robinhood Chain mainnet.
  * Client already waited for the receipt; keep this tight so seating is not laggy.
  */
-/** Empty calldata is a legacy sit. New sits embed the lobby table id. */
-export function sitPaymentMatchesTable(
-  input: Hex | null | undefined,
-  tableId: string,
-) {
-  if (!input || input === "0x") return true;
+function decodeUsdgTransfer(input: Hex | null | undefined) {
+  if (!input || input === "0x") return null;
   try {
-    const text = hexToString(input).replace(/\0/g, "").trim().toUpperCase();
-    if (!text) return true;
-    const wanted = tableId.toUpperCase();
-    return text === wanted;
+    const decoded = decodeFunctionData({ abi: USDG_ABI, data: input });
+    if (decoded.functionName !== "transfer") return null;
+    const [to, value] = decoded.args;
+    return { to: to.toLowerCase() as Hex, value };
   } catch {
-    return false;
+    return null;
   }
+}
+
+function receiptHasExactUsdgTransfer(
+  receipt: Awaited<ReturnType<ReturnType<typeof publicClient>["getTransactionReceipt"]>>,
+  from: Hex,
+  to: Hex,
+  value: bigint,
+) {
+  return receipt.logs.some((log) => {
+    if (log.address.toLowerCase() !== ROBINHOOD_USDG_ADDRESS.toLowerCase())
+      return false;
+    try {
+      const decoded = decodeEventLog({
+        abi: USDG_ABI,
+        eventName: "Transfer",
+        data: log.data,
+        topics: log.topics,
+        strict: true,
+      });
+      return (
+        decoded.args.from.toLowerCase() === from.toLowerCase() &&
+        decoded.args.to.toLowerCase() === to.toLowerCase() &&
+        decoded.args.value === value
+      );
+    } catch {
+      return false;
+    }
+  });
 }
 
 export async function verifySitTransaction(input: {
   hash: Hex;
   from: Hex;
-  tableId?: string;
 }): Promise<{ ok: true } | { ok: false; error: SitTxError }> {
   const client = publicClient();
-  const expectedTo = getTreasury().address.toLowerCase();
+  const expectedTreasury = getTreasury().address.toLowerCase() as Hex;
   const expectedFrom = input.from.toLowerCase();
 
   let tx: Awaited<ReturnType<typeof client.getTransaction>> | null = null;
@@ -230,6 +270,18 @@ export async function verifySitTransaction(input: {
     };
   }
 
+  const head = await client.getBlockNumber();
+  const confirmations = head - receipt.blockNumber + BigInt(1);
+  if (confirmations < BigInt(getPlayRequiredConfirmations())) {
+    return {
+      ok: false,
+      error: {
+        code: "TX_NOT_FOUND",
+        message: `Sit transaction is confirmed but waiting for ${getPlayRequiredConfirmations()} block confirmations.`,
+      },
+    };
+  }
+
   const chainId = tx.chainId ?? getBoardChainId();
   if (chainId !== getBoardChainId()) {
     return {
@@ -243,33 +295,49 @@ export async function verifySitTransaction(input: {
 
   const to = tx.to?.toLowerCase();
   const from = tx.from.toLowerCase();
-  if (to !== expectedTo || from !== expectedFrom) {
+  if (
+    to !== ROBINHOOD_USDG_ADDRESS.toLowerCase() ||
+    from !== expectedFrom ||
+    tx.value !== BigInt(0)
+  ) {
     return {
       ok: false,
       error: {
         code: "TX_MISMATCH",
         message:
-          "Sit transaction does not pay the play treasury from this wallet.",
+          "Sit transaction is not a canonical USDG transfer from this wallet.",
       },
     };
   }
 
-  if (tx.value !== PLAY_SIT_VALUE) {
+  const transfer = decodeUsdgTransfer(tx.input);
+  if (
+    !transfer ||
+    transfer.to !== expectedTreasury ||
+    transfer.value !== PLAY_SIT_VALUE
+  ) {
     return {
       ok: false,
       error: {
         code: "TX_MISMATCH",
-        message: `Sit must send exactly ${PLAY_ENTRY_FEE_ETH} ETH.`,
+        message: `Sit must transfer exactly ${PLAY_ENTRY_FEE_USDG} ${USDG_SYMBOL} to the play treasury.`,
       },
     };
   }
 
-  if (input.tableId && !sitPaymentMatchesTable(tx.input, input.tableId)) {
+  if (
+    !receiptHasExactUsdgTransfer(
+      receipt,
+      input.from,
+      expectedTreasury,
+      PLAY_SIT_VALUE,
+    )
+  ) {
     return {
       ok: false,
       error: {
         code: "TX_MISMATCH",
-        message: "Sit payment is for a different table.",
+        message: "The confirmed transaction did not emit the expected USDG transfer.",
       },
     };
   }
@@ -291,10 +359,12 @@ type ExplorerTx = {
   timeStamp?: string;
   isError?: string;
   txreceipt_status?: string;
+  contractAddress?: string;
+  tokenDecimal?: string;
 };
 
 async function treasuryExplorerRows(): Promise<ExplorerTx[]> {
-  const url = `${getBoardExplorerUrl()}/api?module=account&action=txlist&address=${getTreasury().address}&sort=desc&page=1&offset=80`;
+  const url = `${getBoardExplorerUrl()}/api?module=account&action=tokentx&contractaddress=${ROBINHOOD_USDG_ADDRESS}&address=${getTreasury().address}&sort=desc&page=1&offset=80`;
   try {
     const response = await boardRpcFetch(url, {
       signal: AbortSignal.timeout(4_000),
@@ -320,8 +390,12 @@ export async function listSuccessfulSitHashes(from: Hex): Promise<Hex[]> {
         row.from?.toLowerCase() === fromKey &&
         row.to?.toLowerCase() === treasuryKey &&
         row.value === value &&
-        row.isError === "0" &&
-        row.txreceipt_status === "1",
+        (!row.contractAddress ||
+          row.contractAddress.toLowerCase() ===
+            ROBINHOOD_USDG_ADDRESS.toLowerCase()) &&
+        (!row.tokenDecimal || row.tokenDecimal === String(USDG_DECIMALS)) &&
+        row.isError !== "1" &&
+        row.txreceipt_status !== "0",
     )
     .map((row) => row.hash!.toLowerCase() as Hex)
     .reverse();
@@ -368,16 +442,19 @@ export async function assertPlayTransfer(transfer: SignedPlayTransfer, to?: Hex,
   const serializedTransaction = transfer.raw as TransactionSerialized;
   const tx = parseTransaction(serializedTransaction);
   const sender = await recoverTransactionAddress({ serializedTransaction });
+  const decoded = decodeUsdgTransfer(tx.data);
   if (keccak256(transfer.raw) !== transfer.hash || tx.nonce !== transfer.nonce ||
       tx.chainId !== getBoardChainId() || sender.toLowerCase() !== getTreasury().address.toLowerCase() ||
-      (to && tx.to?.toLowerCase() !== to.toLowerCase()) ||
-      (amount && tx.value !== parseEther(amount))) {
+      tx.to?.toLowerCase() !== ROBINHOOD_USDG_ADDRESS.toLowerCase() ||
+      (tx.value ?? BigInt(0)) !== BigInt(0) || !decoded ||
+      (to && decoded.to !== to.toLowerCase()) ||
+      (amount && decoded.value !== parseUsdg(amount))) {
     throw new Error("Signed payment intent does not match its network, treasury, recipient or amount. Manual review required.");
   }
 }
 
 function nonceDocumentKey() {
-  return `play-nonce-${getBoardChainId()}-${getTreasury().address.toLowerCase()}`;
+  return `play-nonce-usdg-${getBoardChainId()}-${ROBINHOOD_USDG_ADDRESS.toLowerCase()}-${getTreasury().address.toLowerCase()}`;
 }
 
 /** Called while holding the shared treasury lock. Save the signed intent before sending it. */
@@ -388,7 +465,12 @@ export async function preparePlayTransfer(
 ): Promise<SignedPlayTransfer> {
   const account = privateKeyToAccount(getTreasury().privateKey);
   const client = publicClient();
-  const value = parseEther(amount);
+  const value = parseUsdg(amount);
+  const data = encodeFunctionData({
+    abi: USDG_ABI,
+    functionName: "transfer",
+    args: [to, value],
+  });
   const wallet = createWalletClient({
     account,
     chain: getBoardChain(),
@@ -413,23 +495,32 @@ export async function preparePlayTransfer(
       const nonce = Math.max(chainNonce, record.nextNonce ?? chainNonce);
       const prepared = await wallet.prepareTransactionRequest({
         account,
-        to,
-        value,
+        to: ROBINHOOD_USDG_ADDRESS,
+        data,
+        value: BigInt(0),
         nonce,
       });
-      const balance = await client.getBalance({ address: account.address });
-      const cost =
-        value +
+      const [gasBalance, tokenBalance] = await Promise.all([
+        client.getBalance({ address: account.address }),
+        client.readContract({
+          address: ROBINHOOD_USDG_ADDRESS,
+          abi: USDG_ABI,
+          functionName: "balanceOf",
+          args: [account.address],
+        }),
+      ]);
+      const gasCost =
         prepared.gas *
-          (prepared.maxFeePerGas ?? prepared.gasPrice ?? BigInt(0));
-      if (balance < cost)
+        (prepared.maxFeePerGas ?? prepared.gasPrice ?? BigInt(0));
+      if (tokenBalance < value || gasBalance < gasCost)
         throw new Error(
-          "The house has insufficient funds for the payout and gas.",
+          "The house has insufficient USDG or ETH gas for this payment.",
         );
       const raw = await account.signTransaction({
         chainId: getBoardChainId(),
-        to,
-        value,
+        to: ROBINHOOD_USDG_ADDRESS,
+        data,
+        value: BigInt(0),
         nonce,
         gas: prepared.gas,
         ...(prepared.maxFeePerGas != null
@@ -465,7 +556,10 @@ export async function playTransferReceipt(
     const receipt = await client.getTransactionReceipt({ hash });
     if (receipt.status !== "success") return "failed";
     const head = await client.getBlockNumber();
-    return head >= receipt.blockNumber ? "confirmed" : "pending";
+    const confirmations = head - receipt.blockNumber + BigInt(1);
+    return confirmations >= BigInt(getPlayRequiredConfirmations())
+      ? "confirmed"
+      : "pending";
   } catch {
     return "pending";
   }
@@ -474,32 +568,57 @@ export async function playTransferReceipt(
 export async function getPlayTreasuryStatus() {
   const client = publicClient();
   try {
-    const balance = await client.getBalance({ address: getTreasury().address });
-    const fees = await client.estimateFeesPerGas();
+    const [gasBalance, tokenBalance, decimals, symbol, fees] = await Promise.all([
+      client.getBalance({ address: getTreasury().address }),
+      client.readContract({
+        address: ROBINHOOD_USDG_ADDRESS,
+        abi: USDG_ABI,
+        functionName: "balanceOf",
+        args: [getTreasury().address],
+      }),
+      client.readContract({
+        address: ROBINHOOD_USDG_ADDRESS,
+        abi: USDG_ABI,
+        functionName: "decimals",
+      }),
+      client.readContract({
+        address: ROBINHOOD_USDG_ADDRESS,
+        abi: USDG_ABI,
+        functionName: "symbol",
+      }),
+      client.estimateFeesPerGas(),
+    ]);
     const zero = BigInt(0);
-    const fallbackGas = BigInt(21_000);
+    const fallbackGas = BigInt(100_000);
     const maxFee = fees.maxFeePerGas ?? fees.gasPrice ?? zero;
     const gasCost = fallbackGas * maxFee;
+    const canonical = decimals === USDG_DECIMALS && symbol === USDG_SYMBOL;
     return {
       address: getTreasury().address,
-      balanceWei: balance.toString(),
-      balanceEth: formatEther(balance),
-      canRefund: balance >= PLAY_SIT_VALUE + gasCost,
+      token: ROBINHOOD_USDG_ADDRESS,
+      balanceAtomic: tokenBalance.toString(),
+      balanceUsdg: formatUnits(tokenBalance, USDG_DECIMALS),
+      gasBalanceWei: gasBalance.toString(),
+      canRefund:
+        canonical && tokenBalance >= PLAY_SIT_VALUE && gasBalance >= gasCost,
+      error: canonical ? null : "Canonical USDG metadata check failed.",
     };
   } catch {
     return {
       address: getTreasury().address,
-      balanceWei: "0",
-      balanceEth: "0",
+      token: ROBINHOOD_USDG_ADDRESS,
+      balanceAtomic: "0",
+      balanceUsdg: "0",
+      gasBalanceWei: "0",
       canRefund: false,
+      error: "Could not verify the canonical USDG contract or treasury reserves.",
     };
   }
 }
 
 /**
- * Return the 0.002 ETH sit fee. The house wallet must also hold gas; if it
- * only holds the sit amount, this fails with INSUFFICIENT_FUNDS so the table
- * service can unseat the player and retry later.
+ * Return the full 1 USDG sit fee. The treasury must also hold native ETH for
+ * gas; otherwise the persisted refund is retried by the payment worker.
  */
 export async function refundSit(
   to: Hex,
@@ -508,7 +627,7 @@ export async function refundSit(
   try {
     const transfer = await preparePlayTransfer(
       to,
-      PLAY_ENTRY_FEE_ETH,
+      PLAY_ENTRY_FEE_USDG,
       `refund:${intentId}`,
     );
     const receipt = await playTransferReceipt(transfer.hash);

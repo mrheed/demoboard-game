@@ -14,10 +14,12 @@ export async function recordPlayWorkerHealth(kind: "gameplay" | "payments", erro
 }
 
 export async function getPlayEntryReadiness() {
+  if (getBoardChainEnv() !== "mainnet")
+    return { entriesAllowed: false, entryBlockReason: "USDG paid entry is available only on Robinhood Chain mainnet." };
   if (getBoardChainEnv() === "mainnet" && process.env.PLAY_MAINNET_ENABLED !== "true")
     return { entriesAllowed: false, entryBlockReason: "Mainnet entries are disabled pending release approval." };
-  // Unit tests exercise money movement exclusively through a fake RPC.
-  if (process.env.NODE_ENV === "test" && getBoardChainEnv() === "testnet")
+  // Unit tests exercise mainnet money movement exclusively through a fake RPC.
+  if (process.env.NODE_ENV === "test")
     return { entriesAllowed: true, entryBlockReason: null };
   const record = await withPlayDocument<WorkerHealth, WorkerHealth>(healthKey(), () => ({}), async (value) => value);
   const now = Date.now();

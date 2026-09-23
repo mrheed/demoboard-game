@@ -99,6 +99,13 @@
       "when": 1790084726907,
       "tag": "0013_wild_ares",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790118000000,
+      "tag": "0014_launch_hardening",
+      "breakpoints": true
     }
   ]
 }

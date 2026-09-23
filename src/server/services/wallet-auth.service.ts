@@ -32,14 +32,26 @@ type Challenge = {
   expiresAt: number;
 };
 
+type ChallengeStore = {
+  challenges: Record<string, Challenge>;
+};
+
 
 /** Mock-mode sessions keyed by raw token. */
 const mockWalletSessions = new Map<
   string,
-  { user: AuthUserView; address: string }
+  { user: AuthUserView; address: string; expiresAt: number }
 >();
 
 const CHALLENGE_TTL_MS = 10 * 60 * 1000;
+const MAX_ACTIVE_CHALLENGES = 4_096;
+const CHALLENGE_STORE_KEY = "wallet-challenges-v2";
+
+function pruneChallenges(store: ChallengeStore, now: number) {
+  for (const [address, challenge] of Object.entries(store.challenges)) {
+    if (!challenge || challenge.expiresAt <= now) delete store.challenges[address];
+  }
+}
 
 function normalizeAddress(address: string): string {
   const trimmed = address.trim();
@@ -126,12 +138,22 @@ async function insertSession(
  */
 export async function issueWalletLoginChallenge(addressRaw: string) {
   const address = normalizeAddress(addressRaw);
-  const challenge = await withPlayDocument<{ challenge?: Challenge }, Challenge>(`wallet-login-${address}`, () => ({}), async (document) => {
+  const challenge = await withPlayDocument<ChallengeStore, Challenge>(CHALLENGE_STORE_KEY, () => ({ challenges: {} }), async (document) => {
+    const now = Date.now();
+    pruneChallenges(document, now);
     // Anonymous challenge requests must not invalidate an outstanding signature.
-    if (!document.challenge || document.challenge.expiresAt <= Date.now()) {
-      document.challenge = { nonce: `board-${randomBytes(16).toString("hex")}`, expiresAt: Date.now() + CHALLENGE_TTL_MS };
+    if (!document.challenges[address]) {
+      if (Object.keys(document.challenges).length >= MAX_ACTIVE_CHALLENGES) {
+        // Keep storage bounded without letting an attacker lock every new
+        // address out until the full TTL elapses. An evicted wallet can safely
+        // request a fresh one-time challenge.
+        const oldest = Object.entries(document.challenges)
+          .sort(([, left], [, right]) => left.expiresAt - right.expiresAt)[0]?.[0];
+        if (oldest) delete document.challenges[oldest];
+      }
+      document.challenges[address] = { nonce: `board-${randomBytes(16).toString("hex")}`, expiresAt: now + CHALLENGE_TTL_MS };
     }
-    return document.challenge;
+    return document.challenges[address]!;
   });
   const { nonce, expiresAt } = challenge;
 
@@ -146,9 +168,11 @@ export async function issueWalletLoginChallenge(addressRaw: string) {
 }
 
 async function consumeChallenge(address: string, message: string, signature: string) {
-  return withPlayDocument<{ challenge?: Challenge }, string>(
-    `wallet-login-${address}`, () => ({}), async (document) => {
-      const challenge = document.challenge;
+  return withPlayDocument<ChallengeStore, string>(
+    CHALLENGE_STORE_KEY, () => ({ challenges: {} }), async (document) => {
+      const now = Date.now();
+      pruneChallenges(document, now);
+      const challenge = document.challenges[address];
       if (!challenge || challenge.expiresAt < Date.now()) {
         throw new AuthError("Login challenge expired. Request a new one.", 401);
       }
@@ -157,7 +181,7 @@ async function consumeChallenge(address: string, message: string, signature: str
         throw new AuthError("Signed message does not match login challenge.", 401);
       }
       await assertSignature({ address, nonce: challenge.nonce, message, signature });
-      delete document.challenge;
+      delete document.challenges[address];
       return challenge.nonce;
     },
   );
@@ -195,7 +219,7 @@ export async function loginWithWallet(input: {
       avatarId: "pawn-gold",
       balance: 0,
     };
-    mockWalletSessions.set(token, { user, address });
+    mockWalletSessions.set(token, { user, address, expiresAt: expiresAt.getTime() });
     return {
       user,
       session: {
@@ -323,9 +347,25 @@ export async function loginWithWallet(input: {
  * Resolve mock wallet sessions created without DATABASE_URL.
  */
 export function resolveMockWalletSession(token: string) {
-  return mockWalletSessions.get(token) ?? null;
+  const session = mockWalletSessions.get(token);
+  if (!session) return null;
+  if (session.expiresAt <= Date.now()) {
+    mockWalletSessions.delete(token);
+    return null;
+  }
+  return session;
 }
 
 export function clearMockWalletSession(token: string) {
-  mockWalletSessions.delete(token);
+  return mockWalletSessions.delete(token) ? 1 : 0;
+}
+
+export function clearMockWalletSessionsForUser(userId: string) {
+  let revoked = 0;
+  for (const [token, session] of mockWalletSessions) {
+    if (session.user.id !== userId) continue;
+    mockWalletSessions.delete(token);
+    revoked += 1;
+  }
+  return revoked;
 }

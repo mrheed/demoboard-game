@@ -4,6 +4,8 @@ import {
   errorResponse,
   readJsonBody,
   readOptionalBoolean,
+  readOptionalInteger,
+  readOptionalNumber,
   readOptionalString,
 } from "@/server/lib/api-response";
 import { assertServiceSecret } from "@/server/lib/service-auth";
@@ -33,6 +35,11 @@ export async function POST(request: Request, context: RouteContext) {
     const result = await confirmDeposit({
       transactionId: id,
       txHash: readOptionalString(body, "txHash"),
+      eventIndex: readOptionalInteger(body, "eventIndex", { min: 0, max: 2_147_483_647 }),
+      amount: readOptionalNumber(body, "amount"),
+      chain: readOptionalString(body, "chain"),
+      walletAddress: readOptionalString(body, "walletAddress"),
+      asset: readOptionalString(body, "asset"),
       fail: readOptionalBoolean(body, "fail") ?? false,
     });
     return NextResponse.json(result);

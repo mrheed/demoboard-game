@@ -23,8 +23,9 @@ export function DemoGatePreview({ game }: { game?: string | null }) {
     const fromProp = parsePreviewGame(game);
     const stored = readPreviewGame();
     const next = fromProp ?? stored ?? "ludo";
-    setChosen(next);
     rememberPreviewGame(next);
+    const timer = window.setTimeout(() => setChosen(next), 0);
+    return () => window.clearTimeout(timer);
   }, [game]);
 
   const Demo = chosen === "monopoly" ? MonopolyDemo : LudoDemo;

@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { parseEther, stringToHex, type Hex } from "viem";
+import { encodeFunctionData, type Hex } from "viem";
 import { usePublicClient, useSendTransaction, useSwitchChain } from "wagmi";
 import { useBoardTokenBalance } from "@/hooks/use-board-token-balance";
 import { usePlaySession } from "@/hooks/use-play-session";
 import { readResponseJson } from "@/lib/fetch-json";
-import { PLAY_ENTRY_FEE_ETH, savePlayPlayer } from "@/lib/game/play-player";
+import { PLAY_ENTRY_FEE_ATOMIC, savePlayPlayer } from "@/lib/game/play-player";
 import {
   clearPendingPlayPayment,
   readPendingPlayPayment,
@@ -18,6 +18,7 @@ import {
 } from "@/lib/game/play-table";
 import { rememberPreviewGame, type PreviewGame } from "@/lib/preview-game";
 import { isGameEnabled, GAME_DISABLED_MESSAGE } from "@/lib/game-availability";
+import { ROBINHOOD_USDG_ADDRESS, USDG_ABI } from "@/lib/wallet/usdg";
 
 export type SitPhase = "idle" | "sending" | "confirming" | "seating";
 
@@ -89,47 +90,105 @@ export function usePlaySit() {
       ) {
         // Never open a wallet transfer for a disabled game, even with a stale server.
         if (!isGameEnabled(game)) throw new Error(GAME_DISABLED_MESSAGE);
-        if (!wallet.canEnter)
+        if (!wallet.hasEntry)
           throw new Error(
-            "Check your network and entry balance before paying.",
+            "You need at least 1 USDG on Robinhood Chain mainnet to sit.",
           );
+        if (!wallet.hasGas)
+          throw new Error("You need a small amount of ETH on Robinhood Chain mainnet for transaction gas.");
         const configResponse = await fetch("/api/play/config", {
           cache: "no-store",
         });
         const config = (await readResponseJson(configResponse)) as {
           treasury?: Hex;
+          token?: Hex;
+          entryFeeAtomic?: string;
+          confirmations?: number;
           entriesAllowed?: boolean;
           entryBlockReason?: string;
           error?: string;
         } | null;
         if (!configResponse.ok || !config?.treasury)
           throw new Error(config?.error ?? "Play treasury is not ready.");
+        if (
+          config.token?.toLowerCase() !== ROBINHOOD_USDG_ADDRESS.toLowerCase() ||
+          config.entryFeeAtomic !== PLAY_ENTRY_FEE_ATOMIC.toString() ||
+          !Number.isSafeInteger(config.confirmations) ||
+          (config.confirmations ?? 0) < 1 ||
+          (config.confirmations ?? 0) > 1_000
+        ) {
+          throw new Error("The play server returned an unsafe USDG payment configuration.");
+        }
         if (!config.entriesAllowed)
           throw new Error(config.entryBlockReason ?? "Paid entries are paused.");
         setSitPhase("sending");
-        const hash = await sendTransactionAsync({
-          to: config.treasury,
-          value: parseEther(PLAY_ENTRY_FEE_ETH),
-          data: stringToHex(tableId),
+        if (wallet.address?.toLowerCase() !== address.toLowerCase()) {
+          throw new Error("Wallet account changed. Retry with the wallet you signed in with.");
+        }
+        let replacementHash: Hex | null = null;
+        const submittedHash = await sendTransactionAsync({
+          account: address,
+          to: ROBINHOOD_USDG_ADDRESS,
+          data: encodeFunctionData({
+            abi: USDG_ABI,
+            functionName: "transfer",
+            args: [config.treasury, PLAY_ENTRY_FEE_ATOMIC],
+          }),
           chainId: wallet.expectedChainId,
         });
-        pending = { tableId, game, address, txHash: hash };
-        savePendingPlayPayment(pending);
+        pending = {
+          tableId,
+          game,
+          address,
+          txHash: submittedHash,
+          asset: "USDG",
+          chainId: wallet.expectedChainId,
+        };
         setPendingPayment(pending);
+        savePendingPlayPayment(pending);
         setSitPhase("confirming");
         if (publicClient) {
           const receipt = await publicClient.waitForTransactionReceipt({
-            hash,
-            confirmations: 1,
+            hash: submittedHash,
+            confirmations: config.confirmations,
             timeout: 60_000,
+            onReplaced(replacement) {
+              if (replacement.reason === "cancelled") {
+                clearPendingPlayPayment();
+                setPendingPayment(null);
+                pending = null;
+                return;
+              }
+              replacementHash = replacement.transaction.hash;
+              const replaced = {
+                tableId,
+                game,
+                address,
+                txHash: replacement.transaction.hash,
+                asset: "USDG",
+                chainId: wallet.expectedChainId,
+              } satisfies PendingPlayPayment;
+              pending = replaced;
+              setPendingPayment(replaced);
+              savePendingPlayPayment(replaced);
+            },
           });
           if (receipt.status !== "success") {
             clearPendingPlayPayment();
             setPendingPayment(null);
             throw new Error("Entry transaction reverted. No seat was opened.");
           }
+          const confirmedHash = replacementHash ?? receipt.transactionHash;
+          if (confirmedHash !== pending.txHash) {
+            pending = { ...pending, txHash: confirmedHash };
+            setPendingPayment(pending);
+            savePendingPlayPayment(pending);
+          }
         }
-        result = await requestSeat(hash);
+        if (!pending) {
+          throw new Error("Entry transaction was cancelled in the wallet.");
+        }
+        result = await requestSeat(pending.txHash);
       }
       for (
         let attempt = 0;
@@ -151,7 +210,12 @@ export function usePlaySit() {
         seated.seat == null
       ) {
         // Keep unresolved hashes recoverable. No invented seat or local-ready fallback.
-        if (seated?.refund || seated?.code === "TX_FAILED" || seated?.code === "TX_USED") {
+        if (
+          seated?.refund ||
+          seated?.code === "TX_FAILED" ||
+          seated?.code === "TX_MISMATCH" ||
+          seated?.code === "TX_USED"
+        ) {
           clearPendingPlayPayment();
           setPendingPayment(null);
         }

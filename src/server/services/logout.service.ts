@@ -36,8 +36,16 @@ export async function logoutSessions(input: {
   const allDevices = Boolean(input.allDevices);
 
   if (!dbConfigured()) {
+    const { clearMockWalletSession, clearMockWalletSessionsForUser } = await import(
+      "@/server/services/wallet-auth.service"
+    );
+    const revoked = allDevices
+      ? clearMockWalletSessionsForUser(input.userId)
+      : input.token?.trim()
+        ? clearMockWalletSession(input.token.trim())
+        : 0;
     return {
-      revoked: allDevices ? 2 : 1,
+      revoked,
       scope: allDevices ? "all" : "current",
       source: "mock",
     };

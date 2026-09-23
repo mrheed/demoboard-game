@@ -1,6 +1,7 @@
 import { PLAY_ENTRY_FEE } from "@/lib/game/play-player";
-import { shortenAddress } from "@/lib/wallet/chains";
+import { getBoardChainId, shortenAddress } from "@/lib/wallet/chains";
 import { MAX_PLAYERS_PER_ROOM, type GameType } from "@/lib/types";
+import { USDG_SYMBOL } from "@/lib/wallet/usdg";
 
 export type PlayTableStatus = "waiting" | "playing" | "cancelled";
 
@@ -86,21 +87,50 @@ export type PlaySeatRecord = {
 const SEAT_KEY = "board.play.seat";
 const TABLE_KEY = "board.play.table";
 
-export type PendingPlayPayment = { tableId: string; game: GameType; address: `0x${string}`; txHash: `0x${string}` };
+export type PendingPlayPayment = {
+  tableId: string;
+  game: GameType;
+  address: `0x${string}`;
+  txHash: `0x${string}`;
+  asset: typeof USDG_SYMBOL;
+  chainId: number;
+};
 const PAYMENT_KEY = "board.play.pending-payment";
 
 export function savePendingPlayPayment(payment: PendingPlayPayment) {
   // Persist the hash before waiting for a receipt so retries never charge twice.
-  window.localStorage.setItem(PAYMENT_KEY, JSON.stringify(payment));
+  try {
+    window.localStorage.setItem(PAYMENT_KEY, JSON.stringify(payment));
+    return true;
+  } catch {
+    // The in-memory caller still retains the hash when storage is unavailable.
+    return false;
+  }
 }
 
 export function readPendingPlayPayment(): PendingPlayPayment | null {
   if (typeof window === "undefined") return null;
-  try { return JSON.parse(window.localStorage.getItem(PAYMENT_KEY) ?? "null") as PendingPlayPayment | null; }
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(PAYMENT_KEY) ?? "null",
+    ) as PendingPlayPayment | null;
+    if (
+      !parsed ||
+      parsed.asset !== USDG_SYMBOL ||
+      parsed.chainId !== getBoardChainId()
+    ) {
+      window.localStorage.removeItem(PAYMENT_KEY);
+      return null;
+    }
+    return parsed;
+  }
   catch { return null; }
 }
 
-export function clearPendingPlayPayment() { window.localStorage.removeItem(PAYMENT_KEY); }
+export function clearPendingPlayPayment() {
+  try { window.localStorage.removeItem(PAYMENT_KEY); }
+  catch { /* private mode / disabled storage */ }
+}
 
 export function savePlaySeat(record: PlaySeatRecord) {
   if (typeof window === "undefined") return;

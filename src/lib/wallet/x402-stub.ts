@@ -6,4 +6,5 @@ export function toClientEvmSigner() {
 }
 export class UptoEvmScheme {}
 export class ExactSvmScheme {}
-export default {};
+const x402Stub = {};
+export default x402Stub;

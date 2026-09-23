@@ -42,11 +42,14 @@ export function LobbyBoard({
   useEffect(() => {
     if (defaultGame) {
       rememberPreviewGame(defaultGame);
-      setSelectedGame(defaultGame);
-      return;
+      const timer = window.setTimeout(() => setSelectedGame(defaultGame), 0);
+      return () => window.clearTimeout(timer);
     }
     const stored = readPreviewGame();
-    if (stored) setSelectedGame(stored);
+    if (stored) {
+      const timer = window.setTimeout(() => setSelectedGame(stored), 0);
+      return () => window.clearTimeout(timer);
+    }
   }, [defaultGame]);
 
   const gameRooms = useMemo(

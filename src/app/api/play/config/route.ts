@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
+  getBoardChainEnv,
   getBoardChainId,
   getBoardChainLabel,
   ROBINHOOD_TESTNET_FAUCET,
@@ -20,13 +21,14 @@ export async function GET() {
       ...config,
       ...readiness,
       entriesAllowed: readiness.entriesAllowed && treasury.canRefund,
-      entryBlockReason: readiness.entryBlockReason ?? (treasury.canRefund ? null : "Paid entries paused: treasury gas reserve is insufficient."),
+      entryBlockReason: readiness.entryBlockReason ?? (treasury.canRefund ? null : treasury.error ?? "Paid entries paused: treasury USDG or ETH gas reserve is insufficient."),
       symbol: PLAY_STAKE_SYMBOL,
       chainId: getBoardChainId(),
       chainLabel: getBoardChainLabel(),
-      faucet: ROBINHOOD_TESTNET_FAUCET,
+      faucet: getBoardChainEnv() === "testnet" ? ROBINHOOD_TESTNET_FAUCET : null,
       entryFee: PLAY_ENTRY_FEE,
-      treasuryBalance: treasury.balanceEth,
+      treasuryBalance: treasury.balanceUsdg,
+      treasuryGasBalanceWei: treasury.gasBalanceWei,
       canRefund: treasury.canRefund,
     });
   } catch (error) {
@@ -38,7 +40,7 @@ export async function GET() {
         symbol: PLAY_STAKE_SYMBOL,
         chainId: getBoardChainId(),
         chainLabel: getBoardChainLabel(),
-        faucet: ROBINHOOD_TESTNET_FAUCET,
+        faucet: getBoardChainEnv() === "testnet" ? ROBINHOOD_TESTNET_FAUCET : null,
         entryFee: PLAY_ENTRY_FEE,
         treasury: null,
         treasuryBalance: "0",

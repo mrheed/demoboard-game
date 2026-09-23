@@ -32,8 +32,11 @@ export function AudioControlsPopover({
   const [muted, setMuted] = useState(false);
 
   useEffect(() => {
-    setVolume(audioManager.getVolume());
-    setMuted(audioManager.isMuted());
+    const timer = window.setTimeout(() => {
+      setVolume(audioManager.getVolume());
+      setMuted(audioManager.isMuted());
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {

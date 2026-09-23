@@ -22,7 +22,7 @@ function readHex(body: unknown, key: string, bytes: 20 | 32): Hex {
 
 export const maxDuration = 20;
 
-/** POST /api/play/sit · verify the 0.002 ETH sit tx and take a waiting seat. */
+/** POST /api/play/sit · verify the exact 1 USDG transfer and take a waiting seat. */
 export async function POST(request: Request) {
   try {
     const body = await readJsonBody(request);

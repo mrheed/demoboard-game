@@ -5,7 +5,7 @@
 export const TOKEN_INFO = {
   symbol: "BOARD",
   chain: "Robinhood Chain",
-  role: "BOARD is separate from paid Ludo. Ludo entries, refunds and winner payouts use native ETH.",
+  role: "BOARD is separate from paid Ludo. Ludo entries, refunds and winner payouts use USDG on Robinhood Chain mainnet.",
   feeNote:
     "The operator treasury retains 2% of a settled Ludo pot. No automatic token buyback or burn is implemented.",
 };
@@ -23,7 +23,7 @@ export const ROADMAP: RoadmapItem[] = [
     id: "tables",
     phase: "Now",
     title: "Ludo-first testing",
-    body: "Server-authoritative Ludo with four paying humans and native ETH settlement. Mainnet entry is gated. Monopoly is disabled: Work in progress.",
+    body: "Server-authoritative Ludo with four paying humans and USDG settlement on Robinhood Chain mainnet. Mainnet entry is gated. Monopoly is disabled: Work in progress.",
     status: "live",
   },
   {
@@ -37,7 +37,7 @@ export const ROADMAP: RoadmapItem[] = [
     id: "season",
     phase: "Later",
     title: "Seasons & leaderboards",
-    body: "Planned ranked play and cosmetic boards. These features do not change the current ETH payout rules or promise automatic token burns.",
+    body: "Planned ranked play and cosmetic boards. These features do not change the current USDG payout rules or promise automatic token burns.",
     status: "later",
   },
 ];
@@ -57,14 +57,14 @@ export type EconomyLane = {
 export const TOKEN_ECONOMY = {
   eyebrow: "Ludo payments",
   title: "Know where your entry goes.",
-  lead: "Paid Ludo requires four paying humans. Entries and payouts use native ETH, not the BOARD token.",
+  lead: "Paid Ludo requires four paying humans. Entries and payouts use canonical USDG, not the BOARD token.",
   closing:
     "Refunds return the full entry amount. Players pay entry gas; the operator pays refund and payout gas separately.",
   lanes: [
     {
       id: "gameplay",
       title: "Paid Ludo pot",
-      body: "Four 0.002 ETH entries form a 0.008 ETH pot. The winner receives 0.00784 ETH; the treasury retains 0.00016 ETH.",
+      body: "Four 1 USDG entries form a 4 USDG pot. The winner receives 3.92 USDG; the treasury retains 0.08 USDG.",
       splits: [
         { label: "Winner", percent: 98 },
         { label: "Treasury", percent: 2 },

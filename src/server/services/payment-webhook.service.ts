@@ -5,6 +5,7 @@
 import { and, eq } from "drizzle-orm";
 
 import { getDb } from "@/server/db";
+import type { DbTx } from "@/server/db/types";
 import {
   feeLedger,
   rewardPayouts,
@@ -27,6 +28,11 @@ export type ProcessPaymentWebhookInput = {
   id: string;
   status: PaymentWebhookStatus;
   txHash?: string;
+  eventIndex?: number;
+  amount?: number;
+  chain?: string;
+  walletAddress?: string;
+  asset?: string;
   /** Optional fee ledger proofs when confirming a reward payout. */
   treasuryTxHash?: string;
   burnTxHash?: string;
@@ -62,20 +68,32 @@ function normalizeTxStatus(
 export async function processPaymentWebhook(
   input: ProcessPaymentWebhookInput,
 ): Promise<ProcessPaymentWebhookResult> {
-  if (input.kind === "reward_payout") {
-    return confirmRewardPayout(input);
+  const canonical = {
+    ...input,
+    txHash: input.txHash?.toLowerCase(),
+    treasuryTxHash: input.treasuryTxHash?.toLowerCase(),
+    burnTxHash: input.burnTxHash?.toLowerCase(),
+    walletAddress: input.walletAddress?.toLowerCase(),
+  };
+  if (canonical.kind === "reward_payout") {
+    return confirmRewardPayout(canonical);
   }
-  return confirmWalletTransaction(input);
+  return confirmWalletTransaction(canonical);
 }
 
 async function confirmRewardPayout(
   input: ProcessPaymentWebhookInput,
 ): Promise<ProcessPaymentWebhookResult> {
   const nextStatus = normalizePayoutStatus(input.status);
-  const txHash =
-    nextStatus === "failed"
-      ? null
-      : (input.txHash ?? `0xpay${Date.now().toString(16)}`);
+  if (nextStatus === "paid" && (!input.txHash || !/^0x[a-fA-F0-9]{64}$/.test(input.txHash))) {
+    throw new PaymentWebhookError("A confirmed 32-byte payout transaction hash is required.", 400);
+  }
+  for (const [label, hash] of [["treasury", input.treasuryTxHash], ["burn", input.burnTxHash]] as const) {
+    if (hash && !/^0x[a-fA-F0-9]{64}$/.test(hash)) {
+      throw new PaymentWebhookError(`A valid 32-byte ${label} transaction hash is required.`, 400);
+    }
+  }
+  const txHash = nextStatus === "failed" ? null : input.txHash!;
 
   if (!dbConfigured()) {
     return {
@@ -105,22 +123,14 @@ async function confirmRewardPayout(
       throw new PaymentWebhookError("Payout already marked failed.", 409);
     }
 
-    if (row.status === "paid" && row.txHash && nextStatus === "paid") {
-      // Idempotent re-delivery with same or new proof · refresh txHash if given.
-      if (input.txHash && input.txHash !== row.txHash) {
-        const [updated] = await tx
-          .update(rewardPayouts)
-          .set({ txHash: input.txHash })
-          .where(eq(rewardPayouts.id, row.id))
-          .returning();
-        return {
-          kind: "reward_payout" as const,
-          id: updated.id,
-          status: updated.status,
-          txHash: updated.txHash,
-          source: "database" as const,
-        };
+    if (row.status === "paid") {
+      // Settlement is monotonic. A late failure must never erase confirmed
+      // payment state, and a different payout hash is a conflicting event.
+      if (nextStatus === "failed") return mapRewardResult(row);
+      if (input.txHash !== row.txHash) {
+        throw new PaymentWebhookError("Payout is already confirmed with a different transaction hash.", 409);
       }
+      await attachRewardProofs(tx, row.id, input);
       return {
         kind: "reward_payout" as const,
         id: row.id,
@@ -161,32 +171,7 @@ async function confirmRewardPayout(
           ),
         );
 
-      if (input.treasuryTxHash) {
-        await tx
-          .update(feeLedger)
-          .set({ txHash: input.treasuryTxHash })
-          .where(
-            and(
-              eq(feeLedger.rewardPayoutId, row.id),
-              eq(feeLedger.kind, "treasury"),
-            ),
-          );
-      }
-
-      if (input.burnTxHash) {
-        await tx
-          .update(feeLedger)
-          .set({
-            txHash: input.burnTxHash,
-            proofUri: input.burnProofUri ?? `mock://burn/${input.burnTxHash}`,
-          })
-          .where(
-            and(
-              eq(feeLedger.rewardPayoutId, row.id),
-              eq(feeLedger.kind, "burn"),
-            ),
-          );
-      }
+      await attachRewardProofs(tx, row.id, input);
     }
 
     if (nextStatus === "failed") {
@@ -232,7 +217,7 @@ async function confirmWalletTransaction(
     };
   }
 
-  const settled = await settledTransaction(input.id, expectedType, nextStatus);
+  const settled = await settledTransaction(input.id, expectedType, nextStatus, input.txHash);
   if (settled) return settled;
 
   // Delegate to the same services the direct confirm/process endpoints call.
@@ -245,6 +230,11 @@ async function confirmWalletTransaction(
       ? await confirmDeposit({
           transactionId: input.id,
           txHash: input.txHash,
+          eventIndex: input.eventIndex,
+          amount: input.amount,
+          chain: input.chain,
+          walletAddress: input.walletAddress,
+          asset: input.asset,
           fail,
         })
       : await processWithdraw({
@@ -271,6 +261,7 @@ async function settledTransaction(
   id: string,
   expectedType: "deposit" | "withdraw",
   nextStatus: "confirmed" | "failed",
+  txHash?: string,
 ): Promise<ProcessPaymentWebhookResult | null> {
   const db = getDb();
   const [row] = await db
@@ -288,6 +279,9 @@ async function settledTransaction(
   if (row.status !== nextStatus) {
     throw new PaymentWebhookError(`${expectedType} is no longer pending.`, 409);
   }
+  if (row.status === "confirmed" && txHash && row.txHash !== txHash) {
+    throw new PaymentWebhookError(`${expectedType} is already confirmed with a different transaction hash.`, 409);
+  }
 
   return {
     kind: expectedType,
@@ -296,4 +290,28 @@ async function settledTransaction(
     txHash: row.txHash,
     source: "database",
   };
+}
+
+function mapRewardResult(row: typeof rewardPayouts.$inferSelect): ProcessPaymentWebhookResult {
+  return { kind: "reward_payout", id: row.id, status: row.status, txHash: row.txHash, source: "database" };
+}
+
+async function attachRewardProofs(
+  tx: DbTx,
+  rewardPayoutId: string,
+  input: ProcessPaymentWebhookInput,
+) {
+  if (input.treasuryTxHash) {
+    await tx.update(feeLedger).set({ txHash: input.treasuryTxHash }).where(and(
+      eq(feeLedger.rewardPayoutId, rewardPayoutId), eq(feeLedger.kind, "treasury"),
+    ));
+  }
+  if (input.burnTxHash) {
+    await tx.update(feeLedger).set({
+      txHash: input.burnTxHash,
+      ...(input.burnProofUri ? { proofUri: input.burnProofUri } : {}),
+    }).where(and(
+      eq(feeLedger.rewardPayoutId, rewardPayoutId), eq(feeLedger.kind, "burn"),
+    ));
+  }
 }

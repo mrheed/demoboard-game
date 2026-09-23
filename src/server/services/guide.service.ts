@@ -46,7 +46,7 @@ export function getWelcomeGuide() {
 
 export function getHowToGuide() {
   return {
-    intro: { title: "How to play Ludo", punch: "Four paying humans. One winner.", support: "Native ETH entries; read BOARD Ludo v2 rules before paying." },
+    intro: { title: "How to play Ludo", punch: "Four paying humans. One winner.", support: "One USDG per entry on Robinhood Chain mainnet; read BOARD Ludo v2 rules before paying." },
     steps: LUDO_LAUNCH_RULES.map((rule, index) => ({ id: `ludo-${index}`, number: index + 1, label: rule.title, title: rule.title, body: rule.text, answer: [{ type: "p", text: rule.text }] })),
     ctas: HOW_TO_CTAS,
   };
@@ -61,13 +61,13 @@ export function getWinGoalsGuide() {
 
 export function getRulesGuide() {
   return {
-    intro: { title: "BOARD Ludo v2", support: "Custodial native ETH entries. Only confirmed transfers are paid." },
+    intro: { title: "BOARD Ludo v2", support: "Custodial USDG entries. Only confirmed transfers are paid." },
     rules: LUDO_LAUNCH_RULES.map((rule, index) => ({ id: `ludo-${index}`, title: rule.title, body: rule.text, answer: [{ type: "p", text: rule.text }] })),
     example: {
-      entryFee: 0.002, seats: 4, grossPot: 0.008, feePercent: 2,
-      feeAmount: 0.00016, winnerPayout: 0.00784, treasuryAmount: 0.00016, buybackAmount: 0, burnAmount: 0,
+      entryFee: 1, seats: 4, grossPot: 4, feePercent: 2,
+      feeAmount: 0.08, winnerPayout: 3.92, treasuryAmount: 0.08, buybackAmount: 0, burnAmount: 0,
     },
-    economy: { symbol: "ETH", custody: "operator treasury", prizeFeePercent: 2 },
+    economy: { symbol: "USDG", custody: "operator treasury", prizeFeePercent: 2 },
     ctas: PRIZE_CTAS,
   };
 }
