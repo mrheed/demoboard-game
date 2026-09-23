@@ -8,7 +8,7 @@ import {
 } from "@/lib/game/play-player";
 import { getBoardChainEnv, getBoardChainId } from "@/lib/wallet/chains";
 import {
-  ROBINHOOD_USDG_ADDRESS,
+  getUsdgAddress,
   USDG_ABI,
   USDG_DECIMALS,
 } from "@/lib/wallet/usdg";
@@ -24,10 +24,13 @@ export function useBoardTokenBalance() {
   const expectedChainId = getBoardChainId();
   const chainEnv = getBoardChainEnv();
   const onNetwork = isConnected && chainId === expectedChainId;
-  const enabled = Boolean(onNetwork && address && chainEnv === "mainnet");
+  // Every supported chain has a stake token, so the balance is readable on
+  // all of them. Gating this on mainnet left the testnet chip showing an
+  // ellipsis forever, because the query simply never ran.
+  const enabled = Boolean(onNetwork && address);
 
   const token = useReadContract({
-    address: ROBINHOOD_USDG_ADDRESS,
+    address: getUsdgAddress(),
     abi: USDG_ABI,
     functionName: "balanceOf",
     args: [address ?? zeroAddress],
@@ -67,14 +70,13 @@ export function useBoardTokenBalance() {
       enabled &&
       (token.isLoading || token.isFetching || gas.isLoading || gas.isFetching) &&
       amount === null,
-    error:
-      chainEnv !== "mainnet"
-        ? "USDG paid entry is available only on Robinhood Chain mainnet."
-        : readError
-          ? readError instanceof Error
-            ? readError.message
-            : "Balance error"
-          : null,
+    // Only genuine read failures are errors now. Reporting "mainnet only" on
+    // every other chain was left over from when testnet had no stake token.
+    error: readError
+      ? readError instanceof Error
+        ? readError.message
+        : "Balance error"
+      : null,
     hasEntry,
     hasGas,
     canEnter: Boolean(onNetwork && hasEntry && hasGas),

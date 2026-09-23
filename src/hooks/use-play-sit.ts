@@ -18,7 +18,7 @@ import {
 } from "@/lib/game/play-table";
 import { rememberPreviewGame, type PreviewGame } from "@/lib/preview-game";
 import { isGameEnabled, GAME_DISABLED_MESSAGE } from "@/lib/game-availability";
-import { ROBINHOOD_USDG_ADDRESS, USDG_ABI } from "@/lib/wallet/usdg";
+import { getUsdgAddress, USDG_ABI } from "@/lib/wallet/usdg";
 
 export type SitPhase = "idle" | "sending" | "confirming" | "seating";
 
@@ -111,7 +111,7 @@ export function usePlaySit() {
         if (!configResponse.ok || !config?.treasury)
           throw new Error(config?.error ?? "Play treasury is not ready.");
         if (
-          config.token?.toLowerCase() !== ROBINHOOD_USDG_ADDRESS.toLowerCase() ||
+          config.token?.toLowerCase() !== getUsdgAddress().toLowerCase() ||
           config.entryFeeAtomic !== PLAY_ENTRY_FEE_ATOMIC.toString() ||
           !Number.isSafeInteger(config.confirmations) ||
           (config.confirmations ?? 0) < 1 ||
@@ -128,7 +128,7 @@ export function usePlaySit() {
         let replacementHash: Hex | null = null;
         const submittedHash = await sendTransactionAsync({
           account: address,
-          to: ROBINHOOD_USDG_ADDRESS,
+          to: getUsdgAddress(),
           data: encodeFunctionData({
             abi: USDG_ABI,
             functionName: "transfer",

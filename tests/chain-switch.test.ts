@@ -95,3 +95,29 @@ test("PLAY_DATA_DIR gives each chain its own local ledger", async () => {
     else process.env.PLAY_DATA_DIR = previous;
   }
 });
+
+test("no module hardcodes the mainnet token for runtime resolution", async () => {
+  const { readdirSync, readFileSync, statSync } = await import("node:fs");
+
+  // usdg.ts defines the constants; everything else must go through
+  // getUsdgAddress() or a testnet build silently talks to the mainnet token.
+  const allowed = join("src", "lib", "wallet", "usdg.ts");
+  const offenders: string[] = [];
+
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir)) {
+      const path = join(dir, entry);
+      if (statSync(path).isDirectory()) {
+        walk(path);
+        continue;
+      }
+      if (!/\.tsx?$/.test(path) || path === allowed) continue;
+      if (readFileSync(path, "utf8").includes("ROBINHOOD_USDG_ADDRESS")) {
+        offenders.push(path);
+      }
+    }
+  };
+  walk("src");
+
+  assert.deepEqual(offenders, [], `use getUsdgAddress() in: ${offenders.join(", ")}`);
+});
