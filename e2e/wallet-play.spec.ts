@@ -1,4 +1,4 @@
-import { E2E_CHAIN_ID, expect, test } from "./fixtures/injected-wallet";
+import { connectWallet, E2E_CHAIN_ID, expect, test } from "./fixtures/injected-wallet";
 
 /**
  * Covers the wallet integration the unit suites cannot reach: what the browser
@@ -37,19 +37,7 @@ test.describe("wallet on Robinhood testnet", () => {
   test("the stake balance resolves instead of showing an endless ellipsis", async ({ page }) => {
     await page.goto("/play");
 
-    // wagmi persists the connection in a cookie, so a run may start already
-    // connected. Only drive the modal when the app is actually asking for it.
-    const connect = page.getByRole("button", { name: /^connect wallet$/i }).first();
-    if (await connect.isVisible().catch(() => false)) {
-      await connect.click();
-      const option = page.locator('[data-testid="rk-wallet-option-okx"]');
-      await option.waitFor({ state: "visible" });
-      await option.click();
-    }
-
-    // The chip names the wallet and its stake balance together.
-    const chip = page.getByRole("button", { name: /wallet 0x/i }).first();
-    await expect(chip).toBeVisible();
+    const chip = await connectWallet(page);
 
     // The regression this guards: a stale mainnet-only condition disabled the
     // balance query off mainnet, leaving an ellipsis that never resolved.

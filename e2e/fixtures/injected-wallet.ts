@@ -159,6 +159,34 @@ export async function installWallet(page: Page) {
   );
 }
 
+
+/**
+ * Get to a connected wallet, however the app chooses to get there.
+ *
+ * wagmi reconnects to the injected provider on load, so the RainbowKit modal
+ * often closes on its own mid-click. Asserting on the connected chip rather
+ * than on the modal keeps the test about the outcome instead of racing a
+ * third-party animation.
+ */
+export async function connectWallet(page: Page) {
+  const chip = page.getByRole("button", { name: /wallet 0x/i }).first();
+  if (await chip.isVisible().catch(() => false)) return chip;
+
+  const connect = page.getByRole("button", { name: /^connect wallet$/i }).first();
+  if (await connect.isVisible().catch(() => false)) {
+    await connect.click().catch(() => undefined);
+  }
+
+  // Best effort: if the app connects itself, this option vanishes first.
+  await page
+    .locator('[data-testid="rk-wallet-option-okx"]')
+    .click({ timeout: 5_000 })
+    .catch(() => undefined);
+
+  await chip.waitFor({ state: "visible", timeout: 30_000 });
+  return chip;
+}
+
 export const test = base.extend<{ wallet: void; walletAddress: string }>({
   // Auto, because Playwright fixtures are lazy: a test that does not name the
   // fixture would otherwise run with no provider installed at all, and fail
